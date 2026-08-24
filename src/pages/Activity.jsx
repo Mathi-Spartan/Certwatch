@@ -15,7 +15,7 @@ export default function Activity({ profile }) {
         <h1>Activity log</h1>
         <p>{profile.role === 'admin'
           ? 'Every call Certwatch made with a partner\u2019s credentials, and who triggered it.'
-          : 'Everything done with your GoGetSSL credentials, by you and by your sub-users.'}</p>
+          : 'Everything done with your API credentials, by you and by your sub-users.'}</p>
       </div></div>
 
       {err && <div className="err">{err}</div>}

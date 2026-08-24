@@ -4,7 +4,7 @@ import { PLATFORMS, setPlatform } from '../lib/platform.js';
 
 const NAV = {
   admin:    [['/partners', 'Partners'], ['/activity', 'Activity log']],
-  partner:  [['/certificates', 'Certificates'], ['/sub-users', 'Sub-users'], ['/connection', 'GoGetSSL connection'], ['/activity', 'Activity log']],
+  partner:  [['/certificates', 'Certificates'], ['/sub-users', 'Sub-users'], ['/connection', 'API connection'], ['/activity', 'Activity log']],
   sub_user: [['/certificates', 'My certificates']],
 };
 

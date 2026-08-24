@@ -26,7 +26,7 @@ export default function Partners() {
       <div className="gp-head">
         <div>
           <h1>Partners</h1>
-          <p>Each partner connects their own GoGetSSL account. You create the login — they hold the credentials.</p>
+          <p>Each partner connects their own GoGetSSL and/or TheSSLStore account. You create the login — they hold the credentials.</p>
         </div>
         <div className="gp-head-actions"><button className="btn btn-primary" onClick={() => setModal(true)}>Add partner</button></div>
       </div>
@@ -100,7 +100,7 @@ function AddPartner({ onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   return (
-    <Modal title="Add partner" sub="They set their own password, then connect their own GoGetSSL account." onClose={onClose}
+    <Modal title="Add partner" sub="They set their own password, then connect their own reseller account." onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn btn-primary" disabled={busy || !full_name || !email} onClick={async () => {
@@ -118,7 +118,7 @@ function AddPartner({ onClose, onDone }) {
       <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Email</span>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
       <div className="callout warn">
-        You are not asked for their GoGetSSL credentials — they enter those themselves after signing in.
+        You are not asked for their API credentials — they enter those themselves after signing in.
         Their API password is never visible to you.
       </div>
     </Modal>

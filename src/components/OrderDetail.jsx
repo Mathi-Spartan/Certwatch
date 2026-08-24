@@ -387,7 +387,7 @@ function AssignModal({ order, subusers, onClose, onDone }) {
         <button className="btn btn-primary" disabled={busy} onClick={async () => {
           setBusy(true); setErr('');
           try {
-            await api('assign', { method: 'POST', body: { order_id: order.gg_order_id, sub_user_id: sel || null } });
+            await api('assign', { method: 'POST', body: { order_id: order.gg_order_id, sub_user_id: sel || null, platform: order.platform } });
             onDone?.(); onClose();
           } catch (e) { setErr(e.message); }
           setBusy(false);

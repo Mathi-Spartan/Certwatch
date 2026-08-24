@@ -34,7 +34,7 @@ export default function Login() {
           <b style={{ fontSize: 15 }}>Certwatch</b>
         </div>
         <h1>Sign in</h1>
-        <p className="sub">Certificate management for GoGetSSL partners.</p>
+        <p className="sub">Certificate management for GoGetSSL and TheSSLStore partners.</p>
 
         {err && <div className="err">{err}</div>}
         {sent && <div className="ok-note">Check your inbox for a link to set a password.</div>}
