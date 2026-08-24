@@ -4,31 +4,32 @@
    in IBM Plex Mono. Anything the INTERFACE ITSELF says is Archivo.
    ───────────────────────────────────────────────────────────── */
 :root{
-  --canvas:#eef1f6;
+  --canvas:#f6f8fb;
   --surface:#ffffff;
-  --surface-2:#f7f9fc;
-  --ink:#0e1726;
-  --ink-2:#3d4a5c;
-  --muted:#6b7a90;
-  --line:#dde3ec;
-  --line-2:#eaeef4;
+  --surface-2:#f2f6fb;
+  --ink:#0a2540;
+  --ink-2:#3a4b60;
+  --muted:#6b7f96;
+  --line:#e3e9f0;
+  --line-2:#eef2f7;
 
-  --navy:#12233c;
-  --navy-2:#0b1728;
+  --navy:#0a2540;
+  --navy-2:#071b30;
 
-  --blue:#3375b1;
-  --blue-deep:#1e4a7b;
-  --blue-wash:#e8f0f8;
+  --blue:#0072c6;
+  --blue-deep:#005a9e;
+  --blue-hover:#3a94d9;
+  --blue-wash:#e6f1fa;
 
   --amber:#b5760a;
   --amber-wash:#fdf3e2;
   --green:#1b7a52;
   --green-wash:#e5f4ec;
-  --red:#b23b30;
+  --red:#c0392b;
   --red-wash:#fbeceb;
 
   --r:6px;
-  --shadow:0 1px 2px rgba(14,23,38,.05), 0 8px 24px -14px rgba(14,23,38,.28);
+  --shadow:0 1px 2px rgba(10,37,64,.04), 0 6px 20px -12px rgba(10,37,64,.22);
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
@@ -371,3 +372,67 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .plat-switch button:hover{color:#e6eef7}
 .plat-switch button.on{background:var(--blue);color:#fff}
 .plat-switch button.on.tss{background:#1f7a3d}
+
+/* ══ enterprise redesign layer (DigiCert blue/white) ══════════ */
+
+/* sidebar: crisper, brand rule, section feel */
+.gp-side{background:linear-gradient(180deg,#0a2540 0%,#071b30 100%);border-right:1px solid rgba(255,255,255,.04)}
+.gp-brand-name{letter-spacing:-.02em}
+.gp-brand{padding-bottom:18px;margin-bottom:6px;border-bottom:1px solid rgba(255,255,255,.07)}
+.gp-brand{position:relative}
+.gp-nav button,.gp-nav a{border-radius:7px;font-weight:500;color:#93a7c0;padding:9px 11px}
+.gp-nav button:hover,.gp-nav a:hover{background:rgba(255,255,255,.05);color:#eaf1f8}
+.gp-nav button.on,.gp-nav a.on{background:rgba(0,114,198,.18);color:#fff}
+.gp-nav button.on::before,.gp-nav a.on::before{background:var(--blue-hover);top:8px;bottom:8px}
+.gp-nav .dot{opacity:.5}
+
+/* the platform context chip in the sidebar */
+.plat-switch{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.06)}
+.plat-switch button.on{background:var(--blue);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.plat-switch button.on.tss{background:#1f7a3d}
+
+/* page head: tighter, enterprise weight */
+.gp-head h1{font-size:20px;letter-spacing:-.02em;color:var(--ink)}
+.gp-head p{font-size:12.5px}
+
+/* KPI cards: flatter, ruled, less shadow — data instruments not marketing cards */
+.stat{border-radius:8px;box-shadow:none;border-color:var(--line);background:var(--surface)}
+.stat .n{font-size:23px;letter-spacing:-.03em;color:var(--ink)}
+.stat .k{color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-size:10px;font-weight:600}
+.stat.act::after{background:var(--blue)}
+.stat.act .n{color:var(--blue-deep)}
+
+/* buttons: DigiCert blue primary */
+.btn-primary{background:var(--blue);border-color:var(--blue)}
+.btn-primary:hover{background:var(--blue-deep);border-color:var(--blue-deep)}
+.btn:focus-visible,.gp-nav button:focus-visible,.gp-nav a:focus-visible,.chip:focus-visible{outline-color:var(--blue)}
+
+/* filter chips: pill, enterprise */
+.chip.on{background:var(--blue);border-color:var(--blue)}
+
+/* tables + order rows: denser, hairline, zebra on hover only */
+.rows,.panel{border-radius:8px;box-shadow:var(--shadow)}
+.row-hd:hover{background:var(--surface-2)}
+.row.open .row-hd{background:var(--blue-wash)}
+.row-cn{color:var(--ink);font-weight:600}
+.api-tag{background:#eaf0f7;color:var(--muted);border-radius:4px;font-weight:700}
+.api-tag.v2{background:var(--blue-wash);color:var(--blue-deep)}
+
+/* pills: slightly flatter enterprise tone */
+.pill{border-radius:5px;font-weight:600}
+.pill.ok{background:var(--green-wash);color:var(--green)}
+.pill.info{background:var(--blue-wash);color:var(--blue-deep)}
+
+/* status dot brightness */
+.row-dot{box-shadow:0 0 0 3px rgba(0,114,198,.08)}
+
+/* auth card: enterprise sign-in */
+.auth-card{border-radius:10px;border-top:3px solid var(--blue)}
+.auth-brand .gp-brand-mark{background:var(--blue)}
+.gp-brand-mark{background:var(--blue)}
+
+/* platform picker cards inherit accents already; tighten */
+.platform-card{border-radius:10px}
+
+/* section headings inside panels */
+.panel-head h2{color:var(--ink);letter-spacing:-.01em}
