@@ -88,17 +88,19 @@ export default function Certificates({ profile }) {
                 </>
               ) : data.connection?.connected ? (
                 <>
-                  <h3>Connected, but GoGetSSL returned no orders</h3>
-                  <p>
-                    We reached your GoGetSSL account{data.connection.last_sync_at ? ` at ${fmtTime(data.connection.last_sync_at)}` : ''} and it
-                    reported an empty order book. That usually means this account has not placed any
-                    certificate orders yet — check you connected the account that holds them.
+                  <h3>Connected, but nothing came back from a listing</h3>
+                  <p style={{ maxWidth: '52ch', margin: '0 auto 16px' }}>
+                    We reached your account{data.connection.last_sync_at ? ` at ${fmtTime(data.connection.last_sync_at)}` : ''} and
+                    GoGetSSL listed no orders. Two kinds of order never appear in a listing, no matter how
+                    often you sync: <b>cancelled orders</b>, and <b>automation subscriptions</b> (ACME and
+                    AutoInstall). Those have to be brought in once by ID — after that they stay up to date
+                    on their own.
                   </p>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                    <button className="btn btn-primary" onClick={sync} disabled={syncing}>
-                      {syncing ? <><span className="spin" /> Syncing</> : 'Try again'}
+                    <Link className="btn btn-primary" to="/connection">Import orders by ID</Link>
+                    <button className="btn" onClick={sync} disabled={syncing}>
+                      {syncing ? <><span className="spin" /> Syncing</> : 'Sync again'}
                     </button>
-                    <Link className="btn" to="/connection">Use a different account</Link>
                   </div>
                 </>
               ) : (
