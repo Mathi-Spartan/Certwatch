@@ -75,8 +75,30 @@ export async function authenticate(login, apiPassword) {
   return r.key;
 }
 
+/**
+ * The statuses GET /orders/ will accept. Probed against the live API:
+ * cancelled, incomplete, new_order, unpaid, pending and reissue are all
+ * rejected with "Not supported status", so a cancelled V1 order can never be
+ * discovered from a listing — only re-read by id once we already know it.
+ */
+export const V1_LIST_STATUSES = ['active', 'expired', 'processing', 'rejected'];
+
 export const gg = {
   listOrders: (k) => call('GET', PATHS.listOrders.path, { authKey: k }),
+
+  /** Union of every listable status, de-duplicated by order id. */
+  async listAll(k) {
+    const byId = new Map();
+    const bare = await this.listOrders(k).catch(() => null);
+    for (const o of (bare?.orders || [])) byId.set(String(o.order_id ?? o.id), o);
+    for (const status of V1_LIST_STATUSES) {
+      try {
+        const r = await call('GET', `${PATHS.listOrders.path}?status=${status}`, { authKey: k });
+        for (const o of (r?.orders || [])) byId.set(String(o.order_id ?? o.id), o);
+      } catch { /* one status failing must not sink the whole sync */ }
+    }
+    return [...byId.values()];
+  },
   orderStatus: (k, id) => call('GET', PATHS.orderStatus.path(id), { authKey: k }),
   balance: (k) => call('GET', PATHS.balance.path, { authKey: k }),
 
@@ -94,6 +116,7 @@ export function normaliseOrder(o) {
   const id = String(o.order_id ?? o.id ?? '');
   return {
     gg_order_id: id,
+    api_version: 'v1',
     common_name: o.domain || o.common_name || null,
     product_name: o.product_name || o.product || null,
     gg_status: (o.status || '').toLowerCase() || null,

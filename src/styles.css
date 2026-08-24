@@ -338,3 +338,10 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .copybox code{flex:1;background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:9px 11px;font-family:'IBM Plex Mono',monospace;font-size:11px;word-break:break-all;line-height:1.5;max-height:88px;overflow:auto}
 
 .gp-nav a{text-decoration:none}
+
+.api-tag{
+  display:inline-block;margin-left:6px;padding:0 4px;border-radius:3px;
+  font-family:'Archivo',sans-serif;font-size:9px;font-weight:600;letter-spacing:.06em;
+  background:#e6ebf3;color:var(--muted);vertical-align:1px;
+}
+.api-tag.v2{background:var(--blue-wash);color:var(--blue-deep)}

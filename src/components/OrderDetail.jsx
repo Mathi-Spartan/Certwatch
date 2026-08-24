@@ -41,6 +41,9 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   const pending = rows.filter(r => r.state < 2).length;
   const dead = ['cancelled', 'expired', 'rejected'].includes(live.gg_status);
   const isSub = profile.role === 'sub_user';
+  // V2 orders are automation subscriptions: issuance, reissue and validation
+  // are driven by the customer's ACME client or agent, not by this API.
+  const isV2 = live.api_version === 'v2';
 
   async function act(action, body = {}, okMessage) {
     setBusy(true); setErr(''); setNote('');
@@ -118,9 +121,9 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       </div>
 
       <div className="acts">
-        {!dead && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
-        <button className="btn" disabled={busy} onClick={() => setModal('download')}>Download</button>
-        {!dead && <>
+        {!dead && !isV2 && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
+        {!isV2 && <button className="btn" disabled={busy} onClick={() => setModal('download')}>Download</button>}
+        {!dead && !isV2 && <>
           <button className="btn" disabled={busy} onClick={() => setModal('method')}>Change validation method</button>
           <button className="btn" disabled={busy} onClick={() => setModal('approver')}>Change approver email</button>
           <button className="btn" disabled={busy} onClick={() => act('resend_approver', {}, 'Approver email sent again.')}>Resend approver email</button>
@@ -130,6 +133,11 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
         <span className="spacer" />
         {!dead && <button className="btn btn-danger" disabled={busy} onClick={() => setModal('cancel')}>Cancel order</button>}
         <div className="acts-note">
+          {isV2 && <div style={{ marginBottom: 6 }}>
+            This is an automation subscription ({live.gg_category?.toUpperCase() || 'V2'}). Certificates are
+            issued and renewed by your ACME client or the AutoInstall agent, so there is nothing here to
+            reissue or validate by hand.
+          </div>}
           {isSub
             ? 'Renewing this order is handled by your partner. Everything else here is yours to run.'
             : 'Renewals are placed from your GoGetSSL account — this portal never spends your balance.'}

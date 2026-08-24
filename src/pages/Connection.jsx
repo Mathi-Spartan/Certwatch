@@ -57,6 +57,11 @@ export default function Connection() {
             <div className="meta" style={{ marginTop: 0 }}>
               <div><span className="lbl">GoGetSSL login</span><span className="v mono">{c.login_masked}</span></div>
               <div><span className="lbl">API password</span><span className="v mono">•••••••••••••••</span></div>
+              <div><span className="lbl">Partner code</span>
+                {c.partner_code
+                  ? <span className="v mono">{c.partner_code}</span>
+                  : <span className="v dim">Not set — automation orders unavailable</span>}
+              </div>
               <div><span className="lbl">Orders synced</span><span className="v mono">{c.orders_synced ?? 0}</span></div>
               <div><span className="lbl">Last sync</span><span className="v mono">{fmtTime(c.last_sync_at)}</span></div>
             </div>
@@ -76,7 +81,74 @@ export default function Connection() {
         Your API password is encrypted before it is stored and every call made with it is written to your activity log.
       </div>
 
+      {c && c.connected && (
+        <div className="panel" style={{ maxWidth: 720, marginTop: 18 }}>
+          <div className="panel-head">
+            <h2>Import orders by ID</h2>
+            <span className="sub" style={{ marginLeft: 'auto' }}>for orders a sync cannot find</span>
+          </div>
+          <div className="panel-body">
+            <p style={{ margin: '0 0 12px', color: 'var(--ink-2)', fontSize: 13, lineHeight: 1.55 }}>
+              GoGetSSL will not list cancelled orders, and automation subscriptions have no listing at all.
+              Paste the order numbers here — or the whole OrderDetail CSV export from your GoGetSSL panel —
+              and we will look each one up and keep it current from then on. AutoInstall subscriptions are
+              the one exception: they can only be found by their item ID, so paste those too if you have them.
+            </p>
+            <ImportBox onDone={load} />
+          </div>
+        </div>
+      )}
+
       {modal && <ConnectModal onClose={() => setModal(false)} onDone={async (m) => { setModal(false); setNote(m); await load(); }} />}
+    </>
+  );
+}
+
+function ImportBox({ onDone }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [result, setResult] = useState(null);
+
+  async function run() {
+    setBusy(true); setErr(''); setResult(null);
+    try {
+      const r = await api('import', { method: 'POST', body: { text } });
+      setResult(r);
+      setText('');
+      onDone?.();
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <>
+      {err && <div className="err">{err}</div>}
+      {result && (
+        <div className={result.imported.length ? 'ok-note' : 'err'}>
+          Found {result.imported.length} of {result.requested}
+          {result.imported.length ? ` — ${result.v1} standard, ${result.v2} automation.` : '.'}
+          {result.not_found.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              Not on this account: <span className="mono">{result.not_found.slice(0, 12).join(', ')}</span>
+              {result.not_found.length > 12 ? ` and ${result.not_found.length - 12} more` : ''}
+              {result.hint && <div style={{ marginTop: 6, opacity: .85 }}>{result.hint}</div>}
+            </div>
+          )}
+        </div>
+      )}
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder={'3575662\n3575678\n\n…or paste the CSV export'}
+        style={{ minHeight: 110 }}
+      />
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+        <button className="btn btn-primary" disabled={busy || !text.trim()} onClick={run}>
+          {busy ? <><span className="spin" /> Looking them up</> : 'Import orders'}
+        </button>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Up to 300 at a time.</span>
+      </div>
     </>
   );
 }
@@ -84,16 +156,21 @@ export default function Connection() {
 function ConnectModal({ onClose, onDone }) {
   const [login, setLogin] = useState('');
   const [pw, setPw] = useState('');
+  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   async function save() {
     setBusy(true); setErr('');
     try {
-      await api('credentials', { method: 'POST', body: { login, api_password: pw } });
+      const r = await api('credentials', { method: 'POST', body: { login, api_password: pw, partner_code: code } });
       setPw('');
       try { await api('sync', { method: 'POST' }); } catch { /* the sync can be retried */ }
-      onDone('Credentials verified. Your orders are syncing now.');
+      onDone(r.v2_ok === false
+        ? 'Saved, but the partner code was rejected — only standard SSL orders will appear. Check the code on your API Settings page.'
+        : r.v2_ok
+          ? 'Verified for both standard and automation orders. Syncing now.'
+          : 'Credentials verified. Your orders are syncing now.');
     } catch (e) { setErr(e.message); }
     setBusy(false);
   }
@@ -118,6 +195,14 @@ function ConnectModal({ onClose, onDone }) {
         <span className="lbl">API password</span>
         <input type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" />
         <div className="hint">Generate this in your GoGetSSL client area under Reseller Modules → API settings. It is not your account password.</div>
+      </div>
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">API partner code <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--muted)', fontWeight: 400 }}>— optional</span></span>
+        <input value={code} onChange={e => setCode(e.target.value)} inputMode="numeric" placeholder="e.g. 133617" />
+        <div className="hint">
+          Shown as “API Partner Code” on the same GoGetSSL API Settings page. Without it we can only reach
+          your standard SSL orders; with it we also reach your ACME and AutoInstall subscriptions.
+        </div>
       </div>
       <div className="callout">Saved encrypted. It is decrypted only to make a call you asked for, and every call is logged.</div>
     </Modal>

@@ -26,7 +26,10 @@ export default function OrderList({ orders, profile, subusers, onChanged }) {
                 <span className="row-cn mono">{o.common_name || '—'}</span>
                 <span className="row-sub">{o.product_name || '—'}</span>
               </span>
-              <span className="row-id mono hide-sm">{o.gg_order_id}</span>
+              <span className="row-id mono hide-sm">
+                {o.gg_order_id}
+                <span className={`api-tag${o.api_version === 'v2' ? ' v2' : ''}`}>{o.api_version === 'v2' ? 'V2' : 'V1'}</span>
+              </span>
               <span className="hide-sm">
                 <span className={`pill ${st.c}`}>{st.t}</span>
                 {pending && <span className="pill warn plain" style={{ marginLeft: 4 }}>DCV</span>}
@@ -36,7 +39,8 @@ export default function OrderList({ orders, profile, subusers, onChanged }) {
               </span>
               <span className="hide-sm">{lc ? <Rail order={o} micro /> : null}</span>
               <span className="row-days mono" style={{ color: col }}>
-                {dead || d == null ? '—' : `${d}d`}<small>reissue</small>
+                {dead || d == null ? '—' : `${d}d`}
+                <small>{o.api_version === 'v2' ? 'renews' : 'reissue'}</small>
               </span>
               <span className="row-chev">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6" /></svg>
