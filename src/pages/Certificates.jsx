@@ -39,7 +39,7 @@ export default function Certificates({ profile }) {
 
   async function sync() {
     setSyncing(true); setErr('');
-    try { await api('sync', { method: 'POST' }); await load(); }
+    try { await api('sync', { method: 'POST', platform }); await load(); }
     catch (e) { setErr(e.message); }
     setSyncing(false);
   }
@@ -88,6 +88,22 @@ export default function Certificates({ profile }) {
                 <>
                   <h3>No certificates yet</h3>
                   <p>Your partner has not assigned you any certificates yet.</p>
+                </>
+              ) : data.connection?.connected && platform === 'thesslstore' ? (
+                <>
+                  <h3>Connected, but this account has no orders</h3>
+                  <p style={{ maxWidth: '52ch', margin: '0 auto 16px' }}>
+                    We reached your {platName} account{data.connection.last_sync_at ? ` at ${fmtTime(data.connection.last_sync_at)}` : ''} and
+                    it returned an empty order book. {platName} lists every order in one call — cancelled
+                    included — so if orders exist they will appear here. Check you connected the right
+                    environment and account.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                    <button className="btn btn-primary" onClick={sync} disabled={syncing}>
+                      {syncing ? <><span className="spin" /> Syncing</> : 'Sync again'}
+                    </button>
+                    <Link className="btn" to="/connection">Check connection</Link>
+                  </div>
                 </>
               ) : data.connection?.connected ? (
                 <>

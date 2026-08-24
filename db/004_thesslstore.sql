@@ -51,3 +51,14 @@ create index if not exists orders_platform_idx on public.orders(partner_id, plat
 
 -- Which platforms a sub-user's parent has connected is derived at query time,
 -- so no column is needed on profiles.
+
+-- TheSSLStore rows use api_version = 'tss'. The check from migration 002 only
+-- allowed 'v1' and 'v2', which silently rejected every TheSSLStore upsert.
+do $$
+begin
+  if exists (select 1 from pg_constraint where conname = 'orders_api_version_chk') then
+    alter table public.orders drop constraint orders_api_version_chk;
+  end if;
+  alter table public.orders
+    add constraint orders_api_version_chk check (api_version in ('v1','v2','tss'));
+end $$;

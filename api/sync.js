@@ -32,18 +32,25 @@ async function syncGoGetSSL(db, partnerId, actor) {
 async function syncTheSSLStore(db, partnerId, actor) {
   const creds = await tssCredsFor(db, partnerId);
   const list = await tss.listOrders(creds);
-  let discovered = 0;
+  let discovered = 0, failed = 0, firstError = null;
   for (const o of Array.isArray(list) ? list : []) {
     const n = normaliseTss(o);
     if (!n.gg_order_id) continue;
-    discovered++;
-    await db.from('orders').upsert({
+    const { error } = await db.from('orders').upsert({
       partner_id: partnerId, ...n,
       source: 'sync', api_linked: true,
       last_synced_at: new Date().toISOString(), last_status_at: new Date().toISOString(),
     }, { onConflict: 'partner_id,platform,gg_order_id' });
+    if (error) { failed++; if (!firstError) firstError = error.message; }
+    else discovered++;
   }
-  return { discovered, updated: discovered, missing: 0, checked: discovered };
+  // A sync that stored nothing but saw orders is a failure, not an empty book.
+  if (failed && discovered === 0) {
+    const e = new Error(`Every order failed to save: ${firstError}`);
+    e.code = 500;
+    throw e;
+  }
+  return { discovered, updated: discovered, missing: failed, checked: discovered + failed };
 }
 
 export async function syncPartner(db, partnerId, actor, platform = 'gogetssl') {
