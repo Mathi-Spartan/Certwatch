@@ -9,6 +9,9 @@ import Connection from './pages/Connection.jsx';
 import SubUsers from './pages/SubUsers.jsx';
 import Partners from './pages/Partners.jsx';
 import Activity from './pages/Activity.jsx';
+import PlatformPicker from './pages/PlatformPicker.jsx';
+import { getPlatform, setPlatform } from './lib/platform.js';
+import { api } from './lib/api.js';
 
 const HOME = { admin: '/partners', partner: '/certificates', sub_user: '/certificates' };
 
@@ -16,6 +19,8 @@ function Shell() {
   const [session, setSession] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState('');
+  const [platform, setPlat] = useState(getPlatform());
+  const [connected, setConnected] = useState(null);
   const loc = useLocation();
 
   useEffect(() => {
@@ -31,7 +36,20 @@ function Shell() {
       const { data, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
       if (gone) return;
       if (error || !data) setProfileError('Your account has no profile yet. Ask your provider to finish setting it up.');
-      else setProfile(data);
+      else {
+        setProfile(data);
+        try {
+          const c = await api('credentials');
+          const list = [];
+          if (c.gogetssl?.connected) list.push('gogetssl');
+          if (c.thesslstore?.connected) list.push('thesslstore');
+          if (!gone) {
+            setConnected(list);
+            // Auto-select when exactly one platform is connected.
+            if (!getPlatform() && list.length === 1) { setPlatform(list[0]); setPlat(list[0]); }
+          }
+        } catch { if (!gone) setConnected([]); }
+      }
     })();
     return () => { gone = true; };
   }, [session]);
@@ -51,10 +69,21 @@ function Shell() {
   }
   if (!profile) return <div className="loading" style={{ paddingTop: 90 }}><span className="spin" /> Loading your account…</div>;
 
+  // Admins have no platform concept — they manage partners across both.
+  const needsPick = profile.role !== 'admin' && !platform && (connected === null || connected.length !== 1);
+  if (profile.role !== 'admin' && connected === null) {
+    return <div className="loading" style={{ paddingTop: 90 }}><span className="spin" /> Loading…</div>;
+  }
+  if (needsPick) {
+    return <PlatformPicker profile={profile} onPick={(p) => setPlat(p)} />;
+  }
+
   const home = HOME[profile.role] || '/certificates';
 
   return (
-    <DashShell profile={profile}>
+    <DashShell profile={profile} platform={profile.role === 'admin' ? null : platform}
+               connectedPlatforms={connected}
+               onPlatformChange={(p) => { setPlat(p); window.location.assign(home); }}>
       <Routes>
         <Route path="/" element={<Navigate to={home} replace />} />
         <Route path="/login" element={<Navigate to={home} replace />} />

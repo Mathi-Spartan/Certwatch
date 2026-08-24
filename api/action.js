@@ -1,6 +1,7 @@
 import { json, readBody, requireUser, audit } from './_lib/db.js';
 import { gg } from './_lib/gg.js';
-import { credsFor, resolveOrder } from './_lib/resolve.js';
+import { tss, normaliseTss } from './_lib/tss.js';
+import { credsFor, tssCredsFor, resolveOrder } from './_lib/resolve.js';
 
 /**
  * Certificate actions, routed by the API the order actually lives in.
@@ -53,6 +54,13 @@ async function v2Cancel(creds, row) {
   return { cancelled: true };
 }
 
+const TSS_ACTIONS = {
+  reissue:         (c, id, p) => tss.reissue(c, id, { csr: p.csr, webServerType: p.webserver_type, dnsNames: p.dns_names, approverEmail: p.approver_email }),
+  resend_approver: (c, id) => tss.resend(c, id, { resendType: 'ApproverEmail' }),
+  change_approver: (c, id, p) => tss.changeApprover(c, id, { approverEmail: p.new_email, domainNames: p.domain }),
+  revoke:          (c, id, p) => tss.revoke(c, id, p.reason),
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
 
@@ -75,6 +83,28 @@ export default async function handler(req, res) {
 
   const { data: row } = await q.maybeSingle();
   if (!row) return json(res, 404, { error: 'That certificate is not yours to manage' });
+
+  // ── TheSSLStore branch ────────────────────────────────────────────────
+  if (row.platform === 'thesslstore') {
+    if (action === 'renew') return json(res, 403, { error: 'Renewals are placed from TheSSLStore directly. This portal never spends a balance.' });
+    const fn = TSS_ACTIONS[action];
+    if (!fn) return json(res, 400, { error: 'That action is not available for this certificate' });
+    try {
+      const creds = await tssCredsFor(db, row.partner_id);
+      const out = await fn(creds, row.gg_order_id, body);
+      let fresh = null;
+      try { const o = await tss.orderStatus(creds, row.gg_order_id); fresh = normaliseTss({ ...o, TheSSLStoreOrderID: row.gg_order_id }); } catch {}
+      if (fresh) {
+        await db.from('orders').update({ ...fresh, last_synced_at: new Date().toISOString(), last_status_at: new Date().toISOString() })
+          .eq('partner_id', row.partner_id).eq('platform', 'thesslstore').eq('gg_order_id', row.gg_order_id);
+      }
+      await audit(db, { actor: profile, partnerId: row.partner_id, action: `order.${action}`, orderId: row.gg_order_id, result: 'ok' });
+      return json(res, 200, { ok: true, result: out, status: fresh?.gg_status || null });
+    } catch (e) {
+      await audit(db, { actor: profile, partnerId: row.partner_id, action: `order.${action}`, orderId: row.gg_order_id, result: 'failed', detail: e.message });
+      return json(res, 502, { error: e.message });
+    }
+  }
 
   const isV2 = row.api_version === 'v2';
   if (isV2 && V2_UNAVAILABLE[action]) {

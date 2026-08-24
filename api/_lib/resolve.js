@@ -1,6 +1,7 @@
 import { decrypt } from './crypto.js';
 import { gg, authenticate, normaliseOrder } from './gg.js';
 import { gg2, normaliseV2 } from './gg2.js';
+import { tss, normaliseTss } from './tss.js';
 
 /**
  * One place that knows both APIs, so nothing above it has to.
@@ -12,13 +13,35 @@ import { gg2, normaliseV2 } from './gg2.js';
  * including cancelled, which no listing endpoint will report.
  */
 
-/** Load a partner's credentials once and hand back everything both APIs need. */
+/** Load a partner's TheSSLStore credentials. */
+export async function tssCredsFor(db, partnerId) {
+  const { data: cred } = await db
+    .from('partner_credentials')
+    .select('*')
+    .eq('partner_id', partnerId)
+    .eq('platform', 'thesslstore')
+    .maybeSingle();
+  if (!cred) {
+    const e = new Error('This partner has not connected a TheSSLStore account yet');
+    e.code = 409;
+    throw e;
+  }
+  return {
+    partnerCode: cred.tss_partner_code,
+    authToken: decrypt(cred.tss_auth_token_enc),
+    environment: cred.tss_environment || 'live',
+    cred,
+  };
+}
+
+/** Load a partner's GoGetSSL credentials once and hand back what both GG APIs need. */
 export async function credsFor(db, partnerId) {
   const { data: cred } = await db
     .from('partner_credentials')
     .select('*')
     .eq('partner_id', partnerId)
-    .single();
+    .eq('platform', 'gogetssl')
+    .maybeSingle();
 
   if (!cred) {
     const e = new Error('This partner has not connected a GoGetSSL account yet');
@@ -100,11 +123,12 @@ export async function resolveOrder(creds, orderId, hint = {}) {
  * per run so a large book cannot blow the function timeout — oldest first, so
  * repeated runs cover everything.
  */
-export async function refreshKnown(db, partnerId, creds, { limit = 40 } = {}) {
+export async function refreshKnown(db, partnerId, creds, { limit = 40, platform = 'gogetssl', tssCreds = null } = {}) {
   const { data: rows } = await db
     .from('orders')
     .select('gg_order_id, api_version, gg_category, gg_item_id')
     .eq('partner_id', partnerId)
+    .eq('platform', platform)
     // Panel-export rows are keyed by an S-number the API does not accept, so
     // there is nothing to re-read for them.
     .eq('api_linked', true)
@@ -113,7 +137,15 @@ export async function refreshKnown(db, partnerId, creds, { limit = 40 } = {}) {
 
   let updated = 0, missing = 0;
   for (const row of rows || []) {
-    const fresh = await resolveOrder(creds, row.gg_order_id, row);
+    let fresh;
+    if (platform === 'thesslstore') {
+      try {
+        const o = await tss.orderStatus(tssCreds, row.gg_order_id);
+        fresh = normaliseTss({ ...o, TheSSLStoreOrderID: row.gg_order_id });
+      } catch { fresh = null; }
+    } else {
+      fresh = await resolveOrder(creds, row.gg_order_id, row);
+    }
     if (!fresh) { missing++; continue; }
     await db.from('orders').update({
       ...fresh,

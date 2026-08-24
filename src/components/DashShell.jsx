@@ -1,5 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { PLATFORMS, setPlatform } from '../lib/platform.js';
 
 const NAV = {
   admin:    [['/partners', 'Partners'], ['/activity', 'Activity log']],
@@ -7,9 +8,10 @@ const NAV = {
   sub_user: [['/certificates', 'My certificates']],
 };
 
-export default function DashShell({ profile, children }) {
+export default function DashShell({ profile, children, platform, onPlatformChange, connectedPlatforms }) {
   const nav = useNavigate();
   const items = NAV[profile.role] || [];
+  const canSwitch = !connectedPlatforms || connectedPlatforms.length !== 1;
 
   const roleLabel = profile.role === 'admin' ? 'Administrator'
     : profile.role === 'partner' ? 'Partner' : 'Sub-user';
@@ -23,6 +25,17 @@ export default function DashShell({ profile, children }) {
           </div>
           <div className="gp-brand-name">Certwatch</div>
         </div>
+        {platform && (
+          <div className="plat-switch" role="group" aria-label="Platform">
+            {Object.values(PLATFORMS).map(p => (
+              <button key={p.id}
+                className={`${platform === p.id ? 'on' : ''}${p.id === 'thesslstore' ? ' tss' : ''}`}
+                onClick={() => { if (platform !== p.id) { setPlatform(p.id); onPlatformChange?.(p.id); } }}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
         <nav className="gp-nav">
           {items.map(([to, label]) => (
             <NavLink key={to} to={to} className={({ isActive }) => (isActive ? 'on' : '')}>

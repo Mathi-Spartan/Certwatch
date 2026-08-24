@@ -3,8 +3,11 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import OrderList from '../components/OrderList.jsx';
 import { lifecycle, dcvRows, fmtTime } from '../lib/lifecycle.js';
+import { getPlatform, PLATFORMS } from '../lib/platform.js';
 
 export default function Certificates({ profile }) {
+  const platform = getPlatform() || 'gogetssl';
+  const platName = PLATFORMS[platform].name;
   const [data, setData] = useState(null);
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
@@ -47,8 +50,8 @@ export default function Certificates({ profile }) {
         <div>
           <h1>{profile.role === 'sub_user' ? 'My certificates' : 'Certificates'}</h1>
           <p>{profile.role === 'sub_user'
-            ? 'Everything assigned to you, straight from your partner\u2019s GoGetSSL account.'
-            : 'Your full GoGetSSL order book, synced automatically. Expand a row to manage the certificate.'}</p>
+            ? `Everything assigned to you, straight from your partner\u2019s ${platName} account.`
+            : `Your full ${platName} order book, synced automatically. Expand a row to manage the certificate.`}</p>
         </div>
         {profile.role === 'partner' && (
           <div className="gp-head-actions">

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import Modal from '../components/Modal.jsx';
 import { fmtTime } from '../lib/lifecycle.js';
+import { getPlatform } from '../lib/platform.js';
 
 export default function Connection() {
+  const platform = getPlatform() || 'gogetssl';
   const [c, setC] = useState(null);
   const [err, setErr] = useState('');
   const [note, setNote] = useState('');
@@ -11,9 +13,12 @@ export default function Connection() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    try { setC(await api('credentials')); } catch (e) { setErr(e.message); }
+    try {
+      const all = await api('credentials');
+      setC(all[platform] || { connected: false });
+    } catch (e) { setErr(e.message); }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [platform]);
 
   async function disconnect() {
     setBusy(true);
@@ -26,7 +31,7 @@ export default function Connection() {
     <>
       <div className="gp-head">
         <div>
-          <h1>GoGetSSL connection</h1>
+          <h1>{platform === 'thesslstore' ? 'TheSSLStore' : 'GoGetSSL'} connection</h1>
           <p>Your API credentials let Certwatch read your orders and manage certificates on your behalf.</p>
         </div>
       </div>
@@ -55,14 +60,21 @@ export default function Connection() {
           </div>
           <div className="panel-body">
             <div className="meta" style={{ marginTop: 0 }}>
-              <div><span className="lbl">GoGetSSL login</span><span className="v mono">{c.login_masked}</span></div>
-              <div><span className="lbl">API password</span><span className="v mono">•••••••••••••••</span></div>
-              <div><span className="lbl">Partner code</span>
-                {c.partner_code
-                  ? <span className="v mono">{c.partner_code}</span>
-                  : <span className="v dim">Not set — automation orders unavailable</span>}
-              </div>
-              <div><span className="lbl">Orders synced</span><span className="v mono">{c.orders_synced ?? 0}</span></div>
+              {platform === 'thesslstore' ? <>
+                <div><span className="lbl">Partner code</span><span className="v mono">{c.partner_code_masked}</span></div>
+                <div><span className="lbl">Auth token</span><span className="v mono">•••••••••••••••</span></div>
+                <div><span className="lbl">Environment</span><span className="v mono">{c.environment}</span></div>
+                <div><span className="lbl">Orders synced</span><span className="v mono">{c.orders_synced ?? 0}</span></div>
+              </> : <>
+                <div><span className="lbl">GoGetSSL login</span><span className="v mono">{c.login_masked}</span></div>
+                <div><span className="lbl">API password</span><span className="v mono">•••••••••••••••</span></div>
+                <div><span className="lbl">Partner code</span>
+                  {c.partner_code
+                    ? <span className="v mono">{c.partner_code}</span>
+                    : <span className="v dim">Not set — automation orders unavailable</span>}
+                </div>
+                <div><span className="lbl">Orders synced</span><span className="v mono">{c.orders_synced ?? 0}</span></div>
+              </>}
               <div><span className="lbl">Last sync</span><span className="v mono">{fmtTime(c.last_sync_at)}</span></div>
             </div>
             <div className="acts">
@@ -77,11 +89,12 @@ export default function Connection() {
       <div className="callout" style={{ marginTop: 18 }}>
         <b>What Certwatch can do with your credentials:</b> read your orders, reissue certificates,
         download certificates, and manage domain validation.{' '}
-        <b>What it cannot do:</b> place new orders or renewals. Nothing here can spend your GoGetSSL balance.
-        Your API password is encrypted before it is stored and every call made with it is written to your activity log.
+        <b>What it cannot do:</b> place new orders or renewals. Nothing here can spend your balance.
+        Your credentials are encrypted before they are stored and every call made with them is written to your activity log.
+        {platform === 'thesslstore' && <><br/><br/><b>TheSSLStore syncs completely</b> — one call returns your entire order book, cancelled orders included, so there is nothing to import by hand.</>}
       </div>
 
-      {c && c.connected && (
+      {c && c.connected && platform === 'gogetssl' && (
         <div className="panel" style={{ maxWidth: 720, marginTop: 18 }}>
           <div className="panel-head">
             <h2>Import orders by ID</h2>
@@ -99,7 +112,9 @@ export default function Connection() {
         </div>
       )}
 
-      {modal && <ConnectModal onClose={() => setModal(false)} onDone={async (m) => { setModal(false); setNote(m); await load(); }} />}
+      {modal && (platform === 'thesslstore'
+        ? <ConnectTssModal onClose={() => setModal(false)} onDone={async (m) => { setModal(false); setNote(m); await load(); }} />
+        : <ConnectModal onClose={() => setModal(false)} onDone={async (m) => { setModal(false); setNote(m); await load(); }} />)}
     </>
   );
 }
@@ -188,6 +203,58 @@ function ImportBox({ onDone }) {
         </span>
       </div>
     </>
+  );
+}
+
+function ConnectTssModal({ onClose, onDone }) {
+  const [code, setCode] = useState('');
+  const [token, setToken] = useState('');
+  const [env, setEnv] = useState('live');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function save() {
+    setBusy(true); setErr('');
+    try {
+      await api('credentials', { method: 'POST', platform: 'thesslstore',
+        body: { partner_code: code, auth_token: token, environment: env } });
+      setToken('');
+      try { await api('sync', { method: 'POST', platform: 'thesslstore' }); } catch { /* retryable */ }
+      onDone(`Verified against the ${env} environment. Your orders are syncing now.`);
+    } catch (e) { setErr(e.message); }
+    setBusy(false);
+  }
+
+  return (
+    <Modal title="Connect your TheSSLStore account"
+      sub="We check the credentials against TheSSLStore before saving them."
+      onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || !code || !token} onClick={save}>
+          {busy ? <><span className="spin" /> Verifying</> : 'Verify and save'}
+        </button>
+      </>}>
+      {err && <div className="err">{err}</div>}
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Environment</span>
+        <div className="tabs" style={{ marginBottom: 0 }}>
+          <button className={env === 'live' ? 'on' : ''} onClick={() => setEnv('live')} type="button">Production (Live)</button>
+          <button className={env === 'sandbox' ? 'on' : ''} onClick={() => setEnv('sandbox')} type="button">Sandbox (Test)</button>
+        </div>
+      </div>
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">API Partner Code</span>
+        <input value={code} onChange={e => setCode(e.target.value)} autoComplete="off" placeholder="e.g. 83300821" />
+        <div className="hint">Shown on your TheSSLStore API Tokens page for the {env} environment.</div>
+      </div>
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Authentication Token</span>
+        <input type="password" value={token} onChange={e => setToken(e.target.value)} autoComplete="new-password" />
+        <div className="hint">Generate it under Integration → API Tokens. It is shown only once, so paste it straight in.</div>
+      </div>
+      <div className="callout">Saved encrypted. It is decrypted only to make a call you asked for, and every call is logged.</div>
+    </Modal>
   );
 }
 
