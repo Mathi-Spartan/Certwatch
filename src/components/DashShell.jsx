@@ -17,7 +17,7 @@ export default function DashShell({ profile, children, platform }) {
 
   return (
     <div className="gp-shell">
-      <aside className="gp-side">
+      <aside className="gp-side" data-platform={platform || 'admin'}>
         <div className="gp-brand">
           <div className="gp-brand-mark">
             <svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm0 6a3 3 0 0 1 3 3v1h1v6H8v-6h1v-1a3 3 0 0 1 3-3zm0 2a1 1 0 0 0-1 1v1h2v-1a1 1 0 0 0-1-1z"/></svg>

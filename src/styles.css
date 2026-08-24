@@ -611,3 +611,12 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .ptag{font-size:11px;font-weight:600;padding:3px 8px;border-radius:5px}
 .ptag.gg{background:var(--blue-wash);color:var(--blue-deep)}
 .ptag.tss{background:#e5f4ec;color:#155f2e}
+
+/* per-platform sidebar theming (Model B) */
+.gp-side[data-platform="thesslstore"]{background:linear-gradient(180deg,#0d2b1d,#082115)}
+.gp-side[data-platform="thesslstore"] .bmark,
+.gp-side[data-platform="thesslstore"] .gp-brand-mark{background:#1f7a3d}
+.gp-side[data-platform="thesslstore"] .gp-nav a.on,
+.gp-side[data-platform="thesslstore"] .gp-nav button.on{background:rgba(31,122,61,.28);color:#fff}
+.gp-side[data-platform="thesslstore"] .gp-nav a.on::before,
+.gp-side[data-platform="thesslstore"] .gp-nav button.on::before{background:#43c17e}
