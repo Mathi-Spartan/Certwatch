@@ -41,7 +41,7 @@ export default function DashGg({ data, orders, syncing, onSync, q, setQ, profile
       <div className="gp-head">
         <div>
           <h1>Order book</h1>
-          <p>Two APIs, one book. Cancelled and automation orders come in by import.</p>
+          <p>Your whole GoGetSSL book — every order, every status, in one sync.</p>
         </div>
         <button className="btn btn-primary" onClick={onSync} disabled={syncing}>
           {syncing ? <><span className="spin" /> Syncing</> : 'Sync now'}
