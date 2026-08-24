@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   const { profile, db } = ctx;
 
   const id = req.query?.id;
-  const platform = req.query?.platform === 'thesslstore' ? 'thesslstore' : (req.query?.platform === 'gogetssl' ? 'gogetssl' : null);
+  const platform = platformFor(profile, req.query?.platform);
 
   // Detail view — always re-read from the CA so nothing on screen is stale.
   if (id) {

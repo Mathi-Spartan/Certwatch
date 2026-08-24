@@ -55,6 +55,21 @@ export function partnerIdOf(profile) {
 }
 
 /**
+ * The platform a request is allowed to act on.
+ *
+ * Model B: a partner or sub-user is bound to one platform by their account, and
+ * that binding is authoritative — a query param cannot widen it. Only the
+ * master admin, who has no binding, may target a platform via ?platform=.
+ * Returns null if an admin didn't specify one (meaning "no platform scope").
+ */
+export function platformFor(profile, requested) {
+  if (profile.role === 'admin') {
+    return requested === 'thesslstore' ? 'thesslstore' : requested === 'gogetssl' ? 'gogetssl' : null;
+  }
+  return profile.platform || null; // the account's own binding, ignoring any param
+}
+
+/**
  * Decrypt a partner's credentials and exchange them for a live GoGetSSL
  * session key. The plaintext password exists only inside this function call.
  */

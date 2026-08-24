@@ -32,7 +32,6 @@ const PLATS = [
 ];
 
 export default function Login() {
-  const [model, setModel] = useState('A');
   const [role, setRole] = useState(null);
   const [chosen, setChosen] = useState(null);
   const [email, setEmail] = useState('');
@@ -103,12 +102,6 @@ export default function Login() {
       </div>
 
       <div className="land-right">
-        <div className="land-preview">
-          <span>Preview mechanics:</span>
-          <button className={model === 'A' ? 'on' : ''} onClick={() => { setModel('A'); setChosen(null); setRole(null); }}>A · one login</button>
-          <button className={model === 'B' ? 'on' : ''} onClick={() => { setModel('B'); setChosen(null); setRole(null); }}>B · per-platform</button>
-        </div>
-
         {!chosen ? (
           <>
             <div className="land-rhead"><h2>Sign in</h2><p>Choose your role to continue.</p></div>
@@ -141,9 +134,7 @@ export default function Login() {
               <h2>{chosenRole.label}</h2>
               <p>
                 {chosenPlat
-                  ? (model === 'A'
-                      ? <>Signing in — you'll land on your <b>{chosenPlat.name}</b> dashboard, and can switch platforms once inside.</>
-                      : <>Signing in to your <b>{chosenPlat.name}</b> account. This login only sees {chosenPlat.name}.</>)
+                  ? <>Sign in to your <b>{chosenPlat.name}</b> account. This login is scoped to {chosenPlat.name} only.</>
                   : 'Sign in to manage partners across both platforms.'}
               </p>
             </div>

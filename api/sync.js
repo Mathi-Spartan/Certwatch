@@ -1,4 +1,4 @@
-import { json, requireUser, partnerIdOf, audit } from './_lib/db.js';
+import { json, requireUser, partnerIdOf, platformFor, audit } from './_lib/db.js';
 import { gg, normaliseOrder } from './_lib/gg.js';
 import { tss, normaliseTss } from './_lib/tss.js';
 import { credsFor, tssCredsFor, refreshKnown } from './_lib/resolve.js';
@@ -82,7 +82,7 @@ export default async function handler(req, res) {
   const partnerId = profile.role === 'admin' ? (req.query?.partner_id || null) : partnerIdOf(profile);
   if (!partnerId) return json(res, 400, { error: 'No partner account to sync' });
 
-  const platform = req.query?.platform === 'thesslstore' ? 'thesslstore' : 'gogetssl';
+  const platform = platformFor(profile, req.query?.platform) || 'gogetssl';
 
   try {
     const r = await syncPartner(db, partnerId, profile, platform);

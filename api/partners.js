@@ -9,6 +9,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     const { data: partners } = await db.from('profiles').select('*').eq('role', 'partner').order('created_at');
+    // platform is on each row already via select('*')
     const { data: creds } = await db.from('partner_credentials').select('partner_id,status,last_sync_at,last_verified_at,orders_synced');
     const { data: subs } = await db.from('profiles').select('parent_partner_id').eq('role', 'sub_user');
     const byId = Object.fromEntries((creds || []).map(c => [c.partner_id, c]));
@@ -24,14 +25,17 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { email, full_name, company_name } = await readBody(req);
+    const { email, full_name, company_name, platform } = await readBody(req);
     if (!email || !full_name) return json(res, 400, { error: 'Name and email are both required' });
+    if (platform !== 'gogetssl' && platform !== 'thesslstore') {
+      return json(res, 400, { error: 'Choose which platform this partner belongs to' });
+    }
 
     const db2 = admin();
     const { data: created, error } = await db2.auth.admin.createUser({
       email: String(email).trim().toLowerCase(),
       email_confirm: true,
-      user_metadata: { full_name, company_name: company_name || null, role: 'partner' },
+      user_metadata: { full_name, company_name: company_name || null, role: 'partner', platform },
     });
     if (error) return json(res, 400, { error: error.message });
 

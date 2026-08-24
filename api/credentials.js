@@ -1,4 +1,4 @@
-import { json, readBody, requireUser, audit } from './_lib/db.js';
+import { json, readBody, requireUser, platformFor, audit } from './_lib/db.js';
 import { encrypt, maskLogin } from './_lib/crypto.js';
 import { authenticate } from './_lib/gg.js';
 import { verifyTss } from './_lib/tss.js';
@@ -9,7 +9,7 @@ export default async function handler(req, res) {
   const { profile, db } = ctx;
   if (profile.role !== 'partner') return json(res, 403, { error: 'Only partners connect an account' });
 
-  const platform = req.query?.platform === 'thesslstore' ? 'thesslstore' : 'gogetssl';
+  const platform = platformFor(profile, req.query?.platform) || profile.platform || 'gogetssl';
 
   // ── GET: connection state for both platforms (or one) ──────────────────
   if (req.method === 'GET') {

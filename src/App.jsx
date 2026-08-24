@@ -9,9 +9,7 @@ import Connection from './pages/Connection.jsx';
 import SubUsers from './pages/SubUsers.jsx';
 import Partners from './pages/Partners.jsx';
 import Activity from './pages/Activity.jsx';
-import PlatformPicker from './pages/PlatformPicker.jsx';
-import { getPlatform, setPlatform } from './lib/platform.js';
-import { api } from './lib/api.js';
+import { setPlatform } from './lib/platform.js';
 
 const HOME = { admin: '/partners', partner: '/certificates', sub_user: '/certificates' };
 
@@ -19,8 +17,6 @@ function Shell() {
   const [session, setSession] = useState(undefined);
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState('');
-  const [platform, setPlat] = useState(getPlatform());
-  const [connected, setConnected] = useState(null);
   const loc = useLocation();
 
   useEffect(() => {
@@ -38,17 +34,9 @@ function Shell() {
       if (error || !data) setProfileError('Your account has no profile yet. Ask your provider to finish setting it up.');
       else {
         setProfile(data);
-        try {
-          const c = await api('credentials');
-          const list = [];
-          if (c.gogetssl?.connected) list.push('gogetssl');
-          if (c.thesslstore?.connected) list.push('thesslstore');
-          if (!gone) {
-            setConnected(list);
-            // Auto-select when exactly one platform is connected.
-            if (!getPlatform() && list.length === 1) { setPlatform(list[0]); setPlat(list[0]); }
-          }
-        } catch { if (!gone) setConnected([]); }
+        // Model B: a partner/sub-user account is bound to one platform. That
+        // binding — not a picker or switcher — decides everything downstream.
+        if (data.platform) setPlatform(data.platform);
       }
     })();
     return () => { gone = true; };
@@ -69,21 +57,23 @@ function Shell() {
   }
   if (!profile) return <div className="loading" style={{ paddingTop: 90 }}><span className="spin" /> Loading your account…</div>;
 
-  // Admins have no platform concept — they manage partners across both.
-  const needsPick = profile.role !== 'admin' && !platform && (connected === null || connected.length !== 1);
-  if (profile.role !== 'admin' && connected === null) {
-    return <div className="loading" style={{ paddingTop: 90 }}><span className="spin" /> Loading…</div>;
-  }
-  if (needsPick) {
-    return <PlatformPicker profile={profile} onPick={(p) => setPlat(p)} />;
+  // Platform is the account's own binding. Admin is platform-agnostic (null).
+  const platform = profile.role === 'admin' ? null : profile.platform;
+
+  // A partner/sub-user with no platform binding is a provisioning error.
+  if (profile.role !== 'admin' && !platform) {
+    return <div className="auth-wrap"><div className="auth-card">
+      <h1>Account not set up</h1>
+      <p className="sub">This account isn't linked to a platform yet. Ask your administrator to set it.</p>
+      <button className="btn" style={{ width: '100%', justifyContent: 'center' }}
+        onClick={() => supabase.auth.signOut()}>Sign out</button>
+    </div></div>;
   }
 
   const home = HOME[profile.role] || '/certificates';
 
   return (
-    <DashShell profile={profile} platform={profile.role === 'admin' ? null : platform}
-               connectedPlatforms={connected}
-               onPlatformChange={(p) => { setPlat(p); window.location.assign(home); }}>
+    <DashShell profile={profile} platform={platform}>
       <Routes>
         <Route path="/" element={<Navigate to={home} replace />} />
         <Route path="/login" element={<Navigate to={home} replace />} />
