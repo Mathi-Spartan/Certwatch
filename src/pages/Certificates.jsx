@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import OrderList from '../components/OrderList.jsx';
-import { lifecycle, dcvRows } from '../lib/lifecycle.js';
+import { lifecycle, dcvRows, fmtTime } from '../lib/lifecycle.js';
 
 export default function Certificates({ profile }) {
   const [data, setData] = useState(null);
@@ -81,11 +81,33 @@ export default function Certificates({ profile }) {
 
           {orders.length === 0 ? (
             <div className="panel"><div className="empty">
-              <h3>No certificates yet</h3>
-              <p>{profile.role === 'partner'
-                ? 'Connect your GoGetSSL account and your whole order book appears here.'
-                : 'Your partner has not assigned you any certificates yet.'}</p>
-              {profile.role === 'partner' && <Link className="btn btn-primary" to="/connection">Connect GoGetSSL</Link>}
+              {profile.role !== 'partner' ? (
+                <>
+                  <h3>No certificates yet</h3>
+                  <p>Your partner has not assigned you any certificates yet.</p>
+                </>
+              ) : data.connection?.connected ? (
+                <>
+                  <h3>Connected, but GoGetSSL returned no orders</h3>
+                  <p>
+                    We reached your GoGetSSL account{data.connection.last_sync_at ? ` at ${fmtTime(data.connection.last_sync_at)}` : ''} and it
+                    reported an empty order book. That usually means this account has not placed any
+                    certificate orders yet — check you connected the account that holds them.
+                  </p>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+                    <button className="btn btn-primary" onClick={sync} disabled={syncing}>
+                      {syncing ? <><span className="spin" /> Syncing</> : 'Try again'}
+                    </button>
+                    <Link className="btn" to="/connection">Use a different account</Link>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3>No certificates yet</h3>
+                  <p>Connect your GoGetSSL account and your whole order book appears here.</p>
+                  <Link className="btn btn-primary" to="/connection">Connect GoGetSSL</Link>
+                </>
+              )}
             </div></div>
           ) : shown.length === 0 ? (
             <div className="panel"><div className="empty">

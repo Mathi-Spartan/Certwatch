@@ -38,9 +38,13 @@ export default async function handler(req, res) {
   if (error) return json(res, 500, { error: error.message });
 
   let subs = [];
+  let connection = null;
   if (profile.role === 'partner') {
     const { data: s } = await db.from('profiles').select('id,full_name,email').eq('parent_partner_id', profile.id);
     subs = s || [];
+    const { data: c } = await db.from('partner_credentials')
+      .select('gg_login,status,last_sync_at,orders_synced').eq('partner_id', profile.id).maybeSingle();
+    connection = c ? { connected: true, status: c.status, last_sync_at: c.last_sync_at, orders_synced: c.orders_synced } : { connected: false };
   }
-  return json(res, 200, { orders: data || [], subusers: subs });
+  return json(res, 200, { orders: data || [], subusers: subs, connection });
 }
