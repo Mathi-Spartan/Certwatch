@@ -105,6 +105,9 @@ export async function refreshKnown(db, partnerId, creds, { limit = 40 } = {}) {
     .from('orders')
     .select('gg_order_id, api_version, gg_category, gg_item_id')
     .eq('partner_id', partnerId)
+    // Panel-export rows are keyed by an S-number the API does not accept, so
+    // there is nothing to re-read for them.
+    .eq('api_linked', true)
     .order('last_status_at', { ascending: true, nullsFirst: true })
     .limit(limit);
 

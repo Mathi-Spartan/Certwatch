@@ -108,46 +108,84 @@ function ImportBox({ onDone }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [progress, setProgress] = useState(null);
   const [result, setResult] = useState(null);
 
+  function loadFile(file) {
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = () => { setText(String(r.result)); setErr(''); setResult(null); };
+    r.onerror = () => setErr('That file could not be read.');
+    r.readAsText(file);
+  }
+
+  /** Batched: keep calling until the server says there is nothing left. */
   async function run() {
-    setBusy(true); setErr(''); setResult(null);
+    setBusy(true); setErr(''); setResult(null); setProgress(null);
+    const totals = { stored: 0, imported: 0, notFound: [], mode: null, total: 0 };
+    let offset = 0;
     try {
-      const r = await api('import', { method: 'POST', body: { text } });
-      setResult(r);
+      for (let guard = 0; guard < 500; guard++) {
+        const r = await api('import', { method: 'POST', body: { text, offset } });
+        totals.mode = r.mode;
+        totals.total = r.total;
+        totals.stored += r.stored || 0;
+        totals.imported += (r.imported || []).length;
+        totals.notFound.push(...(r.not_found || []));
+        setProgress({ done: r.done, total: r.total });
+        if (r.next_offset == null) break;
+        offset = r.next_offset;
+      }
+      setResult(totals);
       setText('');
       onDone?.();
     } catch (e) { setErr(e.message); }
     setBusy(false);
+    setProgress(null);
   }
 
   return (
     <>
       {err && <div className="err">{err}</div>}
       {result && (
-        <div className={result.imported.length ? 'ok-note' : 'err'}>
-          Found {result.imported.length} of {result.requested}
-          {result.imported.length ? ` — ${result.v1} standard, ${result.v2} automation.` : '.'}
-          {result.not_found.length > 0 && (
+        <div className={(result.stored || result.imported) ? 'ok-note' : 'err'}>
+          {result.mode === 'csv'
+            ? `Added ${result.stored} of ${result.total} rows from the panel export.`
+            : `Resolved ${result.imported} of ${result.total} order IDs.`}
+          {result.notFound.length > 0 && (
             <div style={{ marginTop: 6 }}>
-              Not on this account: <span className="mono">{result.not_found.slice(0, 12).join(', ')}</span>
-              {result.not_found.length > 12 ? ` and ${result.not_found.length - 12} more` : ''}
-              {result.hint && <div style={{ marginTop: 6, opacity: .85 }}>{result.hint}</div>}
+              Could not resolve <span className="mono">{result.notFound.slice(0, 10).join(', ')}</span>
+              {result.notFound.length > 10 ? ` and ${result.notFound.length - 10} more` : ''}.
             </div>
           )}
         </div>
       )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+        <label className="btn" style={{ cursor: 'pointer' }}>
+          Choose CSV export
+          <input type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+                 onChange={e => loadFile(e.target.files?.[0])} />
+        </label>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+          or paste order IDs / the CSV contents below
+        </span>
+      </div>
+
       <textarea
         value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder={'3575662\n3575678\n\n…or paste the CSV export'}
+        onChange={e => { setText(e.target.value); setResult(null); }}
+        placeholder={'Paste API order numbers, one per line\n\n…or drop in the Certificates CSV export from your GoGetSSL panel'}
         style={{ minHeight: 110 }}
       />
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <button className="btn btn-primary" disabled={busy || !text.trim()} onClick={run}>
-          {busy ? <><span className="spin" /> Looking them up</> : 'Import orders'}
+          {busy ? <><span className="spin" /> {progress ? `Importing ${progress.done} of ${progress.total}` : 'Reading'}</> : 'Import orders'}
         </button>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>Up to 300 at a time.</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+          Any size — it runs in batches.
+        </span>
       </div>
     </>
   );

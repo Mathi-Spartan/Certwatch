@@ -29,6 +29,7 @@ export default function OrderList({ orders, profile, subusers, onChanged }) {
               <span className="row-id mono hide-sm">
                 {o.gg_order_id}
                 <span className={`api-tag${o.api_version === 'v2' ? ' v2' : ''}`}>{o.api_version === 'v2' ? 'V2' : 'V1'}</span>
+                {o.api_linked === false && <span className="api-tag" title="From your panel export — not linked to the API">EXPORT</span>}
               </span>
               <span className="hide-sm">
                 <span className={`pill ${st.c}`}>{st.t}</span>

@@ -25,6 +25,7 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
 
   useEffect(() => {
     let gone = false;
+    if (order.api_linked === false) return () => { gone = true; };
     (async () => {
       try {
         const fresh = await api(`orders?id=${encodeURIComponent(order.gg_order_id)}`);
@@ -44,6 +45,9 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   // V2 orders are automation subscriptions: issuance, reissue and validation
   // are driven by the customer's ACME client or agent, not by this API.
   const isV2 = live.api_version === 'v2';
+  // Rows from the panel export carry the CA's own status but no API order id,
+  // so nothing can be actioned against the CA for them.
+  const unlinked = live.api_linked === false;
 
   async function act(action, body = {}, okMessage) {
     setBusy(true); setErr(''); setNote('');
@@ -76,9 +80,16 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       {err && <div className="err">{err}</div>}
       {note && <div className="ok-note">{note}</div>}
 
+      {unlinked && (
+        <div className="callout warn">
+          This came from your GoGetSSL panel export. The status and dates are the CA's own, but the export
+          does not include an API order number, so this order cannot be managed from here. Open it in the
+          GoGetSSL panel and paste its <b>API Order ID</b> into Import to link it up.
+        </div>
+      )}
       {lc
         ? <div className="rail-wrap"><Rail order={live} showEnds /></div>
-        : <div className="callout">This order has no issued certificate yet, so there is no lifecycle to show.</div>}
+        : !unlinked && <div className="callout">This order has no issued certificate yet, so there is no lifecycle to show.</div>}
 
       <div className="meta">
         {meta.map(([k, v]) => <div key={k}><span className="lbl">{k}</span>{v}</div>)}
@@ -120,7 +131,7 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
         )}
       </div>
 
-      <div className="acts">
+      <div className="acts" style={unlinked ? { display: 'none' } : undefined}>
         {!dead && !isV2 && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
         {!isV2 && <button className="btn" disabled={busy} onClick={() => setModal('download')}>Download</button>}
         {!dead && !isV2 && <>
