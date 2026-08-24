@@ -620,3 +620,15 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .gp-side[data-platform="thesslstore"] .gp-nav button.on{background:rgba(31,122,61,.28);color:#fff}
 .gp-side[data-platform="thesslstore"] .gp-nav a.on::before,
 .gp-side[data-platform="thesslstore"] .gp-nav button.on::before{background:#43c17e}
+
+/* expandable management inside cards/rows */
+.tc-expand{width:100%;margin-top:12px;padding:8px;border:1px solid #e2ece6;border-radius:7px;background:#f5f8f6;
+  color:#155f2e;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.tc-expand:hover{background:#e5f4ec}
+.tss-card.open{grid-column:1 / -1}
+.tc-detail{margin-top:14px;padding-top:16px;border-top:1px solid #e2ece6}
+.gg-rowwrap{border-bottom:1px solid var(--line-2)}
+.gg-rowwrap .gg-row{border-bottom:0}
+.gg-rowwrap.open{background:var(--blue-wash)}
+.gg-caret{color:var(--muted);font-size:10px;margin-left:6px}
+.gg-detail{padding:6px 18px 20px}

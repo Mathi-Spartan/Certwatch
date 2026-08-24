@@ -33,7 +33,7 @@ export default function Certificates({ profile }) {
   if (!data) return <div className="loading" style={{ paddingTop: 60 }}><span className="spin" /> Loading your certificates…</div>;
 
   const orders = data.orders || [];
-  const shared = { data, orders, syncing, onSync: sync, q, setQ };
+  const shared = { data, orders, syncing, onSync: sync, q, setQ, profile, onChanged: load };
 
   return (
     <div className="gp-body">

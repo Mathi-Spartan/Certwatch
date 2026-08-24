@@ -1,6 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { lifecycle, fmtTime } from '../lib/lifecycle.js';
+import OrderDetail from '../components/OrderDetail.jsx';
 
 /**
  * TheSSLStore dashboard — lifecycle-forward.
@@ -10,7 +11,7 @@ import { lifecycle, fmtTime } from '../lib/lifecycle.js';
  * lifecycle timeline, and rich per-order cards. It never talks about import,
  * because there is nothing to import here.
  */
-export default function DashTss({ data, orders, syncing, onSync, q, setQ }) {
+export default function DashTss({ data, orders, syncing, onSync, q, setQ, profile, onChanged }) {
   const stats = useMemo(() => {
     const active = orders.filter(o => o.gg_status === 'active');
     const pending = orders.filter(o => o.gg_status === 'processing');
@@ -84,7 +85,7 @@ export default function DashTss({ data, orders, syncing, onSync, q, setQ }) {
           <input className="tss-search" placeholder="Search domain, order ID or product"
                  value={q} onChange={e => setQ(e.target.value)} />
           <div className="tss-grid">
-            {filtered.map(o => <TssCard key={o.gg_order_id} o={o} />)}
+            {filtered.map(o => <TssCard key={o.gg_order_id} o={o} profile={profile} subusers={data.subusers || []} onChanged={onChanged} />)}
           </div>
         </>
       )}
@@ -92,7 +93,8 @@ export default function DashTss({ data, orders, syncing, onSync, q, setQ }) {
   );
 }
 
-function TssCard({ o }) {
+function TssCard({ o, profile, subusers, onChanged }) {
+  const [open, setOpen] = useState(false);
   const lc = lifecycle(o);
   const dead = ['cancelled', 'expired'].includes(o.gg_status);
   const pending = o.gg_status === 'processing';
@@ -105,8 +107,8 @@ function TssCard({ o }) {
   const stage = pending ? 1 : o.gg_status === 'active' ? 3 : dead ? 0 : 2;
 
   return (
-    <div className="tss-card">
-      <div className="tc-head">
+    <div className={`tss-card${open ? ' open' : ''}`}>
+      <div className="tc-head" onClick={() => setOpen(v => !v)} style={{ cursor: 'pointer' }}>
         <div>
           <div className="tc-dom mono">{o.common_name || o.product_name || 'Order ' + o.gg_order_id}</div>
           <div className="tc-prod">{o.product_name || '—'}</div>
@@ -124,6 +126,12 @@ function TssCard({ o }) {
       <div className="tc-lane">
         {[0, 1, 2, 3].map(i => <div key={i} className={`lane${i < stage ? ' done' : i === stage && !dead ? ' now' : ''}`} />)}
       </div>
+      <button className="tc-expand" onClick={() => setOpen(v => !v)}>{open ? 'Close' : 'Manage certificate'} {open ? '▲' : '▼'}</button>
+      {open && (
+        <div className="tc-detail" onClick={e => e.stopPropagation()}>
+          <OrderDetail order={o} profile={profile} subusers={subusers} onChanged={onChanged} />
+        </div>
+      )}
     </div>
   );
 }

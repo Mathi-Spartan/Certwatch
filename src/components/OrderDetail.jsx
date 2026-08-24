@@ -45,6 +45,8 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   // V2 orders are automation subscriptions: issuance, reissue and validation
   // are driven by the customer's ACME client or agent, not by this API.
   const isV2 = live.api_version === 'v2';
+  // TheSSLStore orders use a different API with its own action set.
+  const isTss = live.platform === 'thesslstore' || live.api_version === 'tss';
   // Rows from the panel export carry the CA's own status but no API order id,
   // so nothing can be actioned against the CA for them.
   const unlinked = live.api_linked === false;
@@ -132,6 +134,26 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       </div>
 
       <div className="acts" style={unlinked ? { display: 'none' } : undefined}>
+        {isTss ? (
+          <>
+            {!dead && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
+            <button className="btn" disabled={busy} onClick={() => act('download', {}, 'Certificate download requested.')}>Download</button>
+            {!dead && <>
+              <button className="btn" disabled={busy} onClick={() => setModal('approver')}>Change approver</button>
+              <button className="btn" disabled={busy} onClick={() => act('resend_approver', {}, 'Approver email sent again.')}>Resend approver email</button>
+            </>}
+            {profile.role === 'partner' && <button className="btn" disabled={busy} onClick={() => setModal('assign')}>Assign to sub-user</button>}
+            <span className="spacer" />
+            {!dead && <button className="btn btn-danger" disabled={busy} onClick={() => setModal('revoke')}>Revoke</button>}
+            <div className="acts-note">
+              {isSub
+                ? 'Renewing is handled by your partner. Everything else here is yours to run.'
+                : 'Renewals are placed from TheSSLStore directly — this portal never spends your balance.'}
+              {' '}Last synced {fmtTime(live.last_synced_at)}.
+            </div>
+          </>
+        ) : (
+        <>
         {!dead && !isV2 && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
         {!isV2 && <button className="btn" disabled={busy} onClick={() => setModal('download')}>Download</button>}
         {!dead && !isV2 && <>
@@ -154,6 +176,8 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
             : 'Renewals are placed from your GoGetSSL account — this portal never spends your balance.'}
           {' '}Last synced {fmtTime(live.last_synced_at)}{live.live === false ? ' · showing the stored copy, the CA did not answer' : ''}.
         </div>
+        </>
+        )}
       </div>
 
       {modal === 'reissue' && <ReissueModal order={live} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
@@ -162,6 +186,7 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       {modal === 'approver' && <ApproverModal rows={rows} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
       {modal === 'assign' && <AssignModal order={live} subusers={subusers} onClose={() => setModal(null)} onDone={onChanged} />}
       {modal === 'cancel' && <CancelModal order={live} lc={lc} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
+      {modal === 'revoke' && <RevokeModal order={live} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
     </div>
   );
 }
@@ -427,6 +452,29 @@ function CancelModal({ order, lc, busy, onClose, onSubmit }) {
         <span className="lbl">Type the domain to confirm</span>
         <input value={typed} onChange={e => setTyped(e.target.value)} placeholder={target} />
       </div>
+    </Modal>
+  );
+}
+
+/* ── revoke (TheSSLStore) ────────────────────────────────────────────── */
+function RevokeModal({ order, busy, onClose, onSubmit }) {
+  const [reason, setReason] = useState('');
+  return (
+    <Modal title="Revoke certificate"
+      sub="This asks TheSSLStore to revoke the issued certificate. It cannot be undone."
+      onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onClose}>Keep it</button>
+        <button className="btn btn-danger" disabled={busy}
+          onClick={() => onSubmit('revoke', { reason: reason.trim() || 'Revoked from Certwatch' }, 'Revocation requested from TheSSLStore.')}>
+          {busy ? <><span className="spin" /> Revoking</> : 'Revoke certificate'}
+        </button>
+      </>}>
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Reason <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--muted)', fontWeight: 400 }}>— optional</span></span>
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. key compromise, superseded" />
+      </div>
+      <div className="callout warn">Revoking is permanent. The certificate stops being trusted once the CA processes the request.</div>
     </Modal>
   );
 }

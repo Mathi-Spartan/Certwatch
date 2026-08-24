@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { lifecycle, fmtTime } from '../lib/lifecycle.js';
+import OrderDetail from '../components/OrderDetail.jsx';
 
 /**
  * GoGetSSL dashboard — reconciliation-forward.
@@ -10,7 +11,7 @@ import { lifecycle, fmtTime } from '../lib/lifecycle.js';
  * view leads with reconciliation state (synced vs imported vs export) and a
  * source breakdown, rather than pretending the book is whole.
  */
-export default function DashGg({ data, orders, syncing, onSync, q, setQ }) {
+export default function DashGg({ data, orders, syncing, onSync, q, setQ, profile, onChanged }) {
   const [filter, setFilter] = useState('all');
 
   const counts = useMemo(() => {
@@ -105,7 +106,7 @@ export default function DashGg({ data, orders, syncing, onSync, q, setQ }) {
               ))}
             </div>
           </div>
-          {filtered.map(o => <GgRow key={o.gg_order_id} o={o} />)}
+          {filtered.map(o => <GgRow key={o.gg_order_id} o={o} profile={profile} subusers={data.subusers || []} onChanged={onChanged} />)}
           {filtered.length === 0 && <div className="gg-row-empty">No orders match.</div>}
         </div>
       )}
@@ -113,7 +114,8 @@ export default function DashGg({ data, orders, syncing, onSync, q, setQ }) {
   );
 }
 
-function GgRow({ o }) {
+function GgRow({ o, profile, subusers, onChanged }) {
+  const [open, setOpen] = useState(false);
   const lc = lifecycle(o);
   const dead = ['cancelled', 'expired', 'rejected'].includes(o.gg_status);
   const isExport = o.api_linked === false;
@@ -124,7 +126,8 @@ function GgRow({ o }) {
     : (lc && lc.toReissue != null ? `${lc.toReissue}d to reissue` : '—');
 
   return (
-    <div className="gg-row">
+   <div className={`gg-rowwrap${open ? ' open' : ''}`}>
+    <div className="gg-row" onClick={() => setOpen(v => !v)} style={{ cursor: 'pointer' }}>
       <span className="gg-domcell">
         <span className="gg-dom mono">{o.common_name || o.product_name || 'Order ' + o.gg_order_id}</span>
         <span className="gg-prod">{o.product_name || ''}</span>
@@ -132,8 +135,14 @@ function GgRow({ o }) {
       </span>
       <span><span className={`pill ${o.gg_status === 'active' ? 'act' : 'can'}`}>{o.gg_status === 'active' ? 'Active' : dead ? (o.gg_status[0].toUpperCase() + o.gg_status.slice(1)) : o.gg_status}</span></span>
       <span className={`gg-id mono${isExport ? ' mut' : ''}`}>{isExport ? o.internal_id : o.gg_order_id}</span>
-      <span className="gg-right mut">{right}</span>
+      <span className="gg-right mut">{right} <span className="gg-caret">{open ? '▲' : '▼'}</span></span>
     </div>
+    {open && (
+      <div className="gg-detail" onClick={e => e.stopPropagation()}>
+        <OrderDetail order={o} profile={profile} subusers={subusers} onChanged={onChanged} />
+      </div>
+    )}
+   </div>
   );
 }
 
