@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api.js';
 import OrderList from '../components/OrderList.jsx';
 import { lifecycle, dcvRows } from '../lib/lifecycle.js';
@@ -84,7 +85,7 @@ export default function Certificates({ profile }) {
               <p>{profile.role === 'partner'
                 ? 'Connect your GoGetSSL account and your whole order book appears here.'
                 : 'Your partner has not assigned you any certificates yet.'}</p>
-              {profile.role === 'partner' && <a className="btn btn-primary" href="/connection">Connect GoGetSSL</a>}
+              {profile.role === 'partner' && <Link className="btn btn-primary" to="/connection">Connect GoGetSSL</Link>}
             </div></div>
           ) : shown.length === 0 ? (
             <div className="panel"><div className="empty">

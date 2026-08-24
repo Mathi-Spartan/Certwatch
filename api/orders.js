@@ -1,4 +1,4 @@
-import { json, requireUser, partnerIdOf, ggKeyFor, audit } from './_lib/db.js';
+import { json, requireUser, ggKeyFor, audit } from './_lib/db.js';
 import { gg } from './_lib/gg.js';
 
 /** Rows the caller is allowed to see. */
