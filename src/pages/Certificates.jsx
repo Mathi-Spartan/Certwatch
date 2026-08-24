@@ -1,0 +1,101 @@
+import { useEffect, useState, useMemo } from 'react';
+import { api } from '../lib/api.js';
+import OrderList from '../components/OrderList.jsx';
+import { lifecycle, dcvRows } from '../lib/lifecycle.js';
+
+export default function Certificates({ profile }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [syncing, setSyncing] = useState(false);
+
+  async function load() {
+    setErr('');
+    try { setData(await api('orders')); } catch (e) { setErr(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+
+  const orders = data?.orders || [];
+  const subusers = data?.subusers || [];
+
+  const shown = useMemo(() => {
+    let l = orders;
+    if (filter === 'action') l = l.filter(o => dcvRows(o.raw).some(r => r.state < 2) && !['cancelled', 'expired'].includes(o.gg_status));
+    if (filter === 'active') l = l.filter(o => o.gg_status === 'active');
+    if (filter === 'unassigned') l = l.filter(o => !o.assigned_to);
+    if (q) l = l.filter(o => `${o.common_name} ${o.gg_order_id} ${o.product_name}`.toLowerCase().includes(q.toLowerCase()));
+    return l;
+  }, [orders, filter, q]);
+
+  const active = orders.filter(o => o.gg_status === 'active');
+  const needAction = orders.filter(o => dcvRows(o.raw).some(r => r.state < 2) && !['cancelled', 'expired'].includes(o.gg_status)).length;
+  const soon = active.filter(o => { const l = lifecycle(o); return l && l.toReissue < 45; }).length;
+  const next = active.map(o => lifecycle(o)?.toReissue).filter(n => typeof n === 'number').sort((a, b) => a - b)[0];
+
+  async function sync() {
+    setSyncing(true); setErr('');
+    try { await api('sync', { method: 'POST' }); await load(); }
+    catch (e) { setErr(e.message); }
+    setSyncing(false);
+  }
+
+  return (
+    <>
+      <div className="gp-head">
+        <div>
+          <h1>{profile.role === 'sub_user' ? 'My certificates' : 'Certificates'}</h1>
+          <p>{profile.role === 'sub_user'
+            ? 'Everything assigned to you, straight from your partner\u2019s GoGetSSL account.'
+            : 'Your full GoGetSSL order book, synced automatically. Expand a row to manage the certificate.'}</p>
+        </div>
+        {profile.role === 'partner' && (
+          <div className="gp-head-actions">
+            <button className="btn" onClick={sync} disabled={syncing}>
+              {syncing ? <><span className="spin" /> Syncing</> : 'Sync now'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {err && <div className="err">{err}</div>}
+      {!data && !err && <div className="loading"><span className="spin" /> Loading your certificates…</div>}
+
+      {data && (
+        <>
+          <div className="stats">
+            <div className={`stat${needAction ? ' act' : ''}`}><span className="n">{needAction}</span><span className="k">Waiting on validation</span></div>
+            <div className="stat"><span className="n">{soon}</span><span className="k">Reissue due within 45 days</span></div>
+            <div className="stat"><span className="n">{active.length}</span><span className="k">Active certificates</span></div>
+            <div className="stat"><span className="n">{next != null ? `${next}d` : '—'}</span><span className="k">Until the next reissue</span></div>
+          </div>
+
+          <div className="filters">
+            <input className="search" placeholder="Search domain, order ID or product" value={q} onChange={e => setQ(e.target.value)} />
+            {[['all', 'All'], ['action', 'Needs attention'], ['active', 'Active'],
+              ...(profile.role === 'partner' ? [['unassigned', 'Unassigned']] : [])].map(([k, l]) => (
+              <button key={k} className={`chip${filter === k ? ' on' : ''}`} onClick={() => setFilter(k)}>{l}</button>
+            ))}
+          </div>
+
+          {orders.length === 0 ? (
+            <div className="panel"><div className="empty">
+              <h3>No certificates yet</h3>
+              <p>{profile.role === 'partner'
+                ? 'Connect your GoGetSSL account and your whole order book appears here.'
+                : 'Your partner has not assigned you any certificates yet.'}</p>
+              {profile.role === 'partner' && <a className="btn btn-primary" href="/connection">Connect GoGetSSL</a>}
+            </div></div>
+          ) : shown.length === 0 ? (
+            <div className="panel"><div className="empty">
+              <h3>Nothing matches that</h3><p>Clear the search or pick a different filter.</p>
+              <button className="btn" onClick={() => { setQ(''); setFilter('all'); }}>Show all certificates</button>
+            </div></div>
+          ) : (
+            <OrderList orders={shown} profile={profile} subusers={subusers} onChanged={load} />
+          )}
+        </>
+      )}
+    </>
+  );
+}
