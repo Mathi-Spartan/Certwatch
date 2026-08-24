@@ -17,6 +17,8 @@ const BASE = 'https://my.gogetssl.com/api';
 export const PATHS = {
   auth:            { verb: 'POST', path: '/auth/' },
   listOrders:      { verb: 'GET',  path: '/orders/' },
+  listAllSsl:      { verb: 'GET',  path: '/orders/ssl/all/' }, // every order, all statuses, paginated
+  batchStatuses:   { verb: 'POST', path: '/orders/statuses/' }, // status+expiry for many ids at once
   orderStatus:     { verb: 'GET',  path: (id) => `/orders/status/${id}/` },
   balance:         { verb: 'GET',  path: '/account/balance/' },
   reissue:         { verb: 'POST', path: (id) => `/orders/ssl/reissue/${id}/` },
@@ -81,24 +83,64 @@ export async function authenticate(login, apiPassword) {
  * rejected with "Not supported status", so a cancelled V1 order can never be
  * discovered from a listing — only re-read by id once we already know it.
  */
-export const V1_LIST_STATUSES = ['active', 'expired', 'processing', 'rejected'];
+/**
+ * Historical note: the old `GET /orders?status=` filter refuses "cancelled"
+ * (and several others) with "Not supported status", which is why this platform
+ * once needed a CSV import to see cancelled orders at all. That workaround is
+ * obsolete: `GET /orders/ssl/all` returns EVERY order in the account — active,
+ * cancelled, expired, the lot — in one paginated call. Verified live against a
+ * real account: 111 cancelled orders came back in a single request.
+ *
+ * The offset ceiling is 1000, so this pages 0..1000 (max 2000 orders). A book
+ * larger than that would need GoGetSSL to lift the cap; we surface a warning
+ * rather than silently truncate.
+ */
+export const V1_LIST_STATUSES = ['active', 'expired', 'processing', 'rejected']; // legacy fallback only
 
 export const gg = {
   listOrders: (k) => call('GET', PATHS.listOrders.path, { authKey: k }),
 
-  /** Union of every listable status, de-duplicated by order id. */
+  /**
+   * Every order in the account, all statuses, via /orders/ssl/all.
+   * Returns { orders, truncated } — orders carry only { order_id, status };
+   * domain/dates are filled in lazily when an order is opened.
+   */
   async listAll(k) {
     const byId = new Map();
-    const bare = await this.listOrders(k).catch(() => null);
-    for (const o of (bare?.orders || [])) byId.set(String(o.order_id ?? o.id), o);
-    for (const status of V1_LIST_STATUSES) {
+    let offset = 0, truncated = false;
+    for (let page = 0; page < 2; page++) {           // offset cap is 1000
+      let r;
       try {
-        const r = await call('GET', `${PATHS.listOrders.path}?status=${status}`, { authKey: k });
-        for (const o of (r?.orders || [])) byId.set(String(o.order_id ?? o.id), o);
-      } catch { /* one status failing must not sink the whole sync */ }
+        r = await call('GET', `${PATHS.listAllSsl.path}?limit=1000&offset=${offset}`, { authKey: k });
+      } catch (e) {
+        // If /orders/ssl/all ever fails, fall back to the legacy status loop so
+        // a sync still returns the listable orders rather than nothing.
+        if (page === 0) return { orders: await legacyListAll.call(this, k), truncated: false };
+        break;
+      }
+      const orders = r?.orders || [];
+      for (const o of orders) byId.set(String(o.order_id ?? o.id), o);
+      if (orders.length < 1000) break;               // last page
+      offset += 1000;
+      if (offset > 1000) { truncated = true; break; } // hit the API's offset ceiling
     }
-    return [...byId.values()];
+    return { orders: [...byId.values()], truncated };
   },
+
+  /** Batch status + expiry for many ids at once (cheap refresh, no per-order calls). */
+  async batchStatuses(k, ids) {
+    if (!ids?.length) return [];
+    const out = [];
+    for (let i = 0; i < ids.length; i += 100) {       // keep each request modest
+      const slice = ids.slice(i, i + 100);
+      try {
+        const r = await call('POST', PATHS.batchStatuses.path, { authKey: k, form: { cids: slice.join(',') } });
+        for (const c of (r?.certificates || [])) out.push(c);
+      } catch { /* a bad batch shouldn't sink the rest */ }
+    }
+    return out;
+  },
+
   orderStatus: (k, id) => call('GET', PATHS.orderStatus.path(id), { authKey: k }),
   balance: (k) => call('GET', PATHS.balance.path, { authKey: k }),
 
@@ -110,6 +152,20 @@ export const gg = {
   cancel: (k, id, reason) =>
     call('POST', PATHS.cancel.path, { authKey: k, form: { order_id: id, reason: reason || 'Cancelled from Certwatch' } }),
 };
+
+/** Legacy multi-status listing, kept only as a fallback if /orders/ssl/all fails. */
+async function legacyListAll(k) {
+  const byId = new Map();
+  const bare = await this.listOrders(k).catch(() => null);
+  for (const o of (bare?.orders || [])) byId.set(String(o.order_id ?? o.id), o);
+  for (const status of V1_LIST_STATUSES) {
+    try {
+      const r = await call('GET', `${PATHS.listOrders.path}?status=${status}`, { authKey: k });
+      for (const o of (r?.orders || [])) byId.set(String(o.order_id ?? o.id), o);
+    } catch { /* one status failing must not sink the whole sync */ }
+  }
+  return [...byId.values()];
+}
 
 /** Map a GoGetSSL order payload onto our columns. Unknown fields are kept raw. */
 export function normaliseOrder(o) {

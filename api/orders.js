@@ -30,10 +30,25 @@ export default async function handler(req, res) {
     try {
       const { key } = await ggKeyFor(db, row.partner_id);
       const fresh = await gg.orderStatus(key, row.gg_order_id);
-      await db.from('orders').update({ raw: fresh, gg_status: (fresh.status || '').toLowerCase() || row.gg_status, last_synced_at: new Date().toISOString() })
+      // Lazy enrichment: the listing gave us only id + status, so the first time
+      // an order is opened we backfill domain and dates from the detail call and
+      // mark it enriched. Blank sentinel dates (0000-00-00) map to null.
+      const clean = (d) => (d && d !== '0000-00-00' ? d : null);
+      const patch = {
+        raw: fresh,
+        gg_status: (fresh.status || '').toLowerCase() || row.gg_status,
+        common_name: fresh.domain || fresh.common_name || row.common_name || null,
+        product_name: row.product_name || (fresh.product_id ? `Product ${fresh.product_id}` : null),
+        valid_from: clean(fresh.valid_from) || row.valid_from,
+        valid_till: clean(fresh.valid_till) || row.valid_till,
+        expires_at: clean(fresh.end_date) || row.expires_at,
+        enriched: true,
+        last_synced_at: new Date().toISOString(),
+      };
+      await db.from('orders').update(patch)
         .eq('partner_id', row.partner_id).eq('gg_order_id', row.gg_order_id);
       await audit(db, { actor: profile, partnerId: row.partner_id, action: 'order.view', orderId: row.gg_order_id });
-      return json(res, 200, { ...row, raw: fresh, live: true });
+      return json(res, 200, { ...row, ...patch, live: true });
     } catch (e) {
       // Fall back to the stored copy rather than showing the user nothing.
       return json(res, 200, { ...row, live: false, live_error: e.message });
