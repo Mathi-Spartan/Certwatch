@@ -1,6 +1,5 @@
 import { json, readBody, requireUser, audit } from './_lib/db.js';
-import { tss, normaliseTss } from './_lib/tss.js';
-import { tssCredsFor } from './_lib/resolve.js';
+import { tss, normaliseTss, tssCredsFor } from './_lib/tss.js';
 
 /**
  * Complete an order that was bought in the TheSSLStore dashboard but never
