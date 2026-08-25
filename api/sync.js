@@ -47,22 +47,61 @@ export async function syncPartner(db, partnerId, actor) {
   return { discovered, updated: discovered, missing: failed, checked: discovered + failed, total: count || 0 };
 }
 
+/**
+ * Shortest gap between two automatic syncs of the same partner.
+ *
+ * Background syncs come from every open tab, and a partner may have several
+ * plus their sub-users. Without a floor, ten tabs would mean ten calls to
+ * TheSSLStore a minute for the same book. The throttle is enforced on the
+ * server, where it sees every tab, rather than in the browser, which only sees
+ * its own. A sync the user asks for explicitly is never throttled.
+ */
+const AUTO_SYNC_MIN_GAP_MS = 45_000;
+
 export default async function handler(req, res) {
   const ctx = await requireUser(req);
   if (ctx.error) return json(res, ctx.code, { error: ctx.error });
   const { profile, db } = ctx;
 
-  if (profile.role === 'sub_user') return json(res, 403, { error: 'Ask your partner to run a sync' });
-  const partnerId = profile.role === 'admin' ? (req.query?.partner_id || null) : partnerIdOf(profile);
+  // Background refresh, not a button press.
+  const auto = req.query?.auto === '1';
+
+  // A sub-user has no credentials of their own, but their view goes stale the
+  // same way. Automatic refresh is allowed against their parent's book — it is
+  // a read of orders they can already see, and the throttle applies. Pressing
+  // Sync is still the partner's call.
+  if (profile.role === 'sub_user' && !auto) {
+    return json(res, 403, { error: 'Ask your partner to run a sync' });
+  }
+
+  const partnerId = profile.role === 'admin'
+    ? (req.query?.partner_id || null)
+    : partnerIdOf(profile);
   if (!partnerId) return json(res, 400, { error: 'No partner account to sync' });
+
+  if (auto) {
+    const { data: cred } = await db.from('partner_credentials')
+      .select('last_sync_at').eq('partner_id', partnerId).eq('platform', PLATFORM).maybeSingle();
+    if (!cred) return json(res, 200, { ok: true, skipped: 'not-connected' });
+    const age = cred.last_sync_at ? Date.now() - new Date(cred.last_sync_at).getTime() : Infinity;
+    if (age < AUTO_SYNC_MIN_GAP_MS) {
+      return json(res, 200, { ok: true, skipped: 'throttled', age_ms: age });
+    }
+  }
 
   try {
     const r = await syncPartner(db, partnerId, profile);
     return json(res, 200, { ok: true, ...r });
   } catch (e) {
-    await db.from('partner_credentials').update({ status: 'error' })
-      .eq('partner_id', partnerId).eq('platform', PLATFORM);
-    await audit(db, { actor: profile, partnerId, action: 'orders.sync', result: 'failed', detail: e.message });
+    // A background sync that fails is usually a transient network blip. Marking
+    // the connection broken and writing an audit line for each one would fill
+    // the log with noise and show the partner a scary state they cannot act on.
+    // Explicit syncs still record both.
+    if (!auto) {
+      await db.from('partner_credentials').update({ status: 'error' })
+        .eq('partner_id', partnerId).eq('platform', PLATFORM);
+      await audit(db, { actor: profile, partnerId, action: 'orders.sync', result: 'failed', detail: e.message });
+    }
     return json(res, e.code || 502, { error: e.message });
   }
 }

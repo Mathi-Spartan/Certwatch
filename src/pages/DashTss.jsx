@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { lifecycle, fmtTime } from '../lib/lifecycle.js';
 import OrderDetail from '../components/OrderDetail.jsx';
@@ -55,7 +55,20 @@ function statusOf(o, certEnd) {
   }
 }
 
-export default function DashTss({ data, orders, syncing, onSync, q, setQ, profile, onChanged }) {
+/** Relative time that ticks on its own, so "just now" does not go stale. */
+function Ago({ at }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => force(n => n + 1), 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.round((Date.now() - new Date(at).getTime()) / 1000));
+  if (secs < 45) return <span>just now</span>;
+  if (secs < 3600) return <span>{Math.round(secs / 60)} min ago</span>;
+  return <span>{fmtTime(at)}</span>;
+}
+
+export default function DashTss({ data, orders, syncing, autoBusy, onSync, q, setQ, profile, onChanged }) {
   const [chip, setChip] = useState('all');
   const [open, setOpen] = useState(null);
 
@@ -151,7 +164,8 @@ export default function DashTss({ data, orders, syncing, onSync, q, setQ, profil
 
           {data.connection?.last_sync_at && (
             <div className="ob-synced">
-              Complete book — {orders.length} orders in one call, updated {fmtTime(data.connection.last_sync_at)}.
+              <span className={`ob-live${autoBusy ? ' on' : ''}`} />
+              Keeping up to date automatically — {orders.length} orders, last checked <Ago at={data.connection.last_sync_at} />.
             </div>
           )}
 
