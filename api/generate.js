@@ -49,6 +49,15 @@ export default async function handler(req, res) {
   const { data: row } = await q.maybeSingle();
   if (!row) return json(res, 404, { error: 'That certificate is not yours to manage' });
 
+  // Assignment transfers the job. A partner who has handed an incomplete order
+  // to a sub-user must not also be able to configure it, or the two race and
+  // the second call fails against an order that is no longer incomplete.
+  if (profile.role === 'partner' && row.assigned_to) {
+    return json(res, 403, {
+      error: 'This order is assigned to a sub-user, so they generate it. Unassign it first if you want to configure it yourself.',
+    });
+  }
+
   if (row.gg_status !== 'processing') {
     return json(res, 409, {
       error: 'Only an incomplete order can be generated. This one has already been configured.',

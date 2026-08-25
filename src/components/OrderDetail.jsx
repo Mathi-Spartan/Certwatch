@@ -38,7 +38,12 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   // carries its own enrolment token, which is what lets us complete it.
   const incomplete = live.gg_status === 'processing'
     && !!(raw.Token || (raw.TokenID && raw.TokenCode));
+  // Generation belongs to whoever owns the certificate. Once an order has been
+  // assigned, that is the end user — the partner hands it over and steps back,
+  // so the button moves rather than being shared. Unassigned orders stay the
+  // partner's to complete.
   const isSub = profile.role === 'sub_user';
+  const canGenerate = incomplete && (isSub || !live.assigned_to);
 
   async function act(action, body = {}, okMessage) {
     setBusy(true); setErr(''); setNote('');
@@ -116,7 +121,7 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       </div>
 
       <div className="acts">
-        {incomplete && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('generate')}>Generate certificate</button>}
+        {canGenerate && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('generate')}>Generate certificate</button>}
         {!dead && !incomplete && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
         <button className="btn" disabled={busy} onClick={() => setModal('download')}>Download</button>
         {!dead && <>
@@ -126,6 +131,9 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
         {profile.role === 'partner' && <button className="btn" disabled={busy} onClick={() => setModal('assign')}>Assign to sub-user</button>}
         <span className="spacer" />
         {!dead && <button className="btn btn-danger" disabled={busy} onClick={() => setModal('revoke')}>Revoke</button>}
+        {incomplete && !canGenerate && (
+          <span className="handed-off">Assigned — the end user generates this certificate.</span>
+        )}
         <div className="acts-note">
           {isSub
             ? 'Renewing is handled by your partner. Everything else here is yours to run.'

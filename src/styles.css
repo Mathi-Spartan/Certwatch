@@ -550,3 +550,5 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .sel{width:100%;height:38px;padding:0 11px;border:1px solid var(--line);border-radius:9px;
   background:var(--surface);font:inherit;font-size:13.5px;color:var(--ink)}
 .sel:focus{outline:none;border-color:var(--blue-hi);box-shadow:0 0 0 3px var(--blue-wash)}
+.acts-hint{font-size:12.5px;color:var(--muted);align-self:center}
+.handed-off{font-size:12px;color:var(--muted);align-self:center}
