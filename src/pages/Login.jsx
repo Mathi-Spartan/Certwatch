@@ -4,33 +4,22 @@ import { supabase } from '../lib/supabase.js';
 /**
  * Certwatch landing + sign-in.
  *
- * Left panel pitches the product; right panel signs people in by role. Every
- * account is a TheSSLStore account — whether it runs against the live or the
- * sandbox API is decided by the credentials the partner saves after signing
+ * One login for everyone. There is no role picker: the account's role lives in
+ * the profiles table, and App.jsx routes on it the moment the session resolves
+ * — admin to /partners, partner and sub-user to /certificates. Asking someone
+ * to declare their role first was never load-bearing; sign-in ignored the pick
+ * entirely, so all it did was imply that choosing wrong would fail.
+ *
+ * Every account is a TheSSLStore account. Whether it runs against the live or
+ * the sandbox API is decided by the credentials the partner saves after signing
  * in, not here.
  */
-
-const ROLES = [
-  { id: 'admin', label: 'Master Admin', blurb: 'Manage every partner account',
-    icon: <svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4z"/><path d="M9 12l2 2 4-4"/></svg> },
-  { id: 'partner', label: 'Partner Admin', blurb: 'Your orders, sub-users and assignments',
-    icon: <svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/></svg> },
-  { id: 'user', label: 'End User', blurb: 'Only the certificates assigned to you',
-    icon: <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg> },
-];
-
 export default function Login() {
-  const [chosen, setChosen] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [sent, setSent] = useState(false);
-
-  function pick(roleId) {
-    setChosen({ role: roleId });
-    setErr('');
-  }
 
   async function signIn(e) {
     e.preventDefault();
@@ -49,8 +38,6 @@ export default function Login() {
     if (error) setErr(error.message); else setSent(true);
     setBusy(false);
   }
-
-  const chosenRole = chosen && ROLES.find(r => r.id === chosen.role);
 
   return (
     <div className="land">
@@ -87,53 +74,33 @@ export default function Login() {
       </div>
 
       <div className="land-right">
-        {!chosen ? (
-          <>
-            <div className="land-rhead"><h2>Sign in</h2><p>Choose your role to continue.</p></div>
-            {ROLES.map(r => (
-              <div key={r.id} className="land-role">
-                <div className="lr-main" onClick={() => pick(r.id)}>
-                  <div className="lr-ic">{r.icon}</div>
-                  <div className="lr-tx"><b>{r.label}</b><span>{r.blurb}</span></div>
-                  <span className="lr-arrow"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg></span>
-                </div>
-              </div>
-            ))}
-            <div className="land-rfoot">Accounts are created by your provider. Need access? <a href="mailto:admin@certwatch.app">Ask to be invited →</a></div>
-          </>
-        ) : (
-          <>
-            <button className="land-back" onClick={() => setChosen(null)}>← Back to roles</button>
-            <div className="land-rhead">
-              <h2>{chosenRole.label}</h2>
-              <p>
-                {chosen.role === 'admin'
-                  ? 'Sign in to manage partner accounts.'
-                  : 'Sign in to your Certwatch account.'}
-              </p>
-            </div>
+        <div className="land-rhead">
+          <h2>Sign in</h2>
+          <p>One login for everyone. Your account decides what you see.</p>
+        </div>
 
-            {err && <div className="err">{err}</div>}
-            {sent && <div className="ok-note">Check your inbox for a link to set a password.</div>}
+        {err && <div className="err">{err}</div>}
+        {sent && <div className="ok-note">Check your inbox for a link to set a password.</div>}
 
-            <form onSubmit={signIn}>
-              <div className="field" style={{ maxWidth: 'none' }}>
-                <span className="lbl">Email</span>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" autoFocus />
-              </div>
-              <div className="field" style={{ maxWidth: 'none' }}>
-                <span className="lbl">Password</span>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
-              </div>
-              <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={busy}>
-                {busy ? <><span className="spin" /> Signing in</> : 'Sign in'}
-              </button>
-            </form>
-            <button className="btn btn-sm" style={{ marginTop: 12, width: '100%', justifyContent: 'center' }} onClick={reset} disabled={busy}>
-              Set or reset password
-            </button>
-          </>
-        )}
+        <form onSubmit={signIn}>
+          <div className="field" style={{ maxWidth: 'none' }}>
+            <span className="lbl">Email</span>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} autoComplete="username" autoFocus />
+          </div>
+          <div className="field" style={{ maxWidth: 'none' }}>
+            <span className="lbl">Password</span>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
+          </div>
+          <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={busy}>
+            {busy ? <><span className="spin" /> Signing in</> : 'Sign in'}
+          </button>
+        </form>
+
+        <button className="btn btn-sm" style={{ marginTop: 12, width: '100%', justifyContent: 'center' }} onClick={reset} disabled={busy}>
+          Set or reset password
+        </button>
+
+        <div className="land-rfoot">Accounts are created by your provider. Need access? <a href="mailto:admin@certwatch.app">Ask to be invited →</a></div>
       </div>
     </div>
   );

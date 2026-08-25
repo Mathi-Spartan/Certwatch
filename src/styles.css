@@ -447,21 +447,8 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .land-rhead p{margin:0;color:var(--muted);font-size:14px;line-height:1.5}
 .land-rhead p b{color:var(--ink-2)}
 
-.land-role{background:var(--surface);border:1px solid var(--line);border-radius:11px;margin-bottom:12px;overflow:hidden;transition:.16s}
-.land-role:hover{border-color:var(--blue-hi);box-shadow:0 8px 24px -16px rgba(10,37,64,.4)}
-.lr-main{display:flex;align-items:center;gap:15px;padding:17px 18px;cursor:pointer}
-.lr-ic{width:40px;height:40px;border-radius:10px;background:var(--blue-wash);display:grid;place-items:center;flex-shrink:0}
-.lr-ic svg{width:20px;height:20px;stroke:var(--blue-deep);fill:none;stroke-width:1.8}
-.lr-tx{flex:1}
-.lr-tx b{display:block;font-size:15px;letter-spacing:-.01em;color:var(--ink)}
-.lr-tx span{font-size:12.5px;color:var(--muted)}
-.lr-arrow{color:var(--muted);transition:.18s;display:flex}
-.lr-arrow svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
-.land-role:hover .lr-arrow{color:var(--blue)}
 .land-rfoot{margin-top:22px;font-size:12px;color:var(--muted);line-height:1.5}
 .land-rfoot a{color:var(--blue-deep);text-decoration:none;font-weight:500}
-.land-back{background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer;padding:0;margin-bottom:18px;font-family:inherit}
-.land-back:hover{color:var(--blue)}
 
 @media(max-width:920px){
   .land{grid-template-columns:1fr}
