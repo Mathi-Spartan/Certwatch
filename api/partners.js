@@ -25,14 +25,32 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { email, full_name, company_name } = await readBody(req);
-    if (!email || !full_name) return json(res, 400, { error: 'Name and email are both required' });
+    const body = await readBody(req);
+    const email = String(body.email || '').trim().toLowerCase();
+    const first_name = String(body.first_name || '').trim();
+    const last_name = String(body.last_name || '').trim();
+    const company_name = String(body.company_name || '').trim() || null;
+    const partner_code = String(body.partner_code || '').trim() || null;
+
+    if (!first_name || !last_name) return json(res, 400, { error: 'First and last name are both required' });
+    if (!email) return json(res, 400, { error: 'An email address is required' });
+    if (!company_name) return json(res, 400, { error: 'A company name is required' });
+    if (!partner_code) return json(res, 400, { error: 'A TheSSLStore Partner Code is required' });
+
+    // full_name stays the display value every other screen already reads.
+    const full_name = `${first_name} ${last_name}`;
+
+    // A partner code identifies one TheSSLStore account — refuse a duplicate
+    // here so the error is readable rather than a raw unique-index violation.
+    const { data: clash } = await db.from('profiles')
+      .select('id,email').eq('tss_partner_code', partner_code).maybeSingle();
+    if (clash) return json(res, 409, { error: `Partner code ${partner_code} is already assigned to ${clash.email}` });
 
     const db2 = admin();
     const { data: created, error } = await db2.auth.admin.createUser({
-      email: String(email).trim().toLowerCase(),
+      email,
       email_confirm: true,
-      user_metadata: { full_name, company_name: company_name || null, role: 'partner', platform: PLATFORM },
+      user_metadata: { full_name, first_name, last_name, company_name, role: 'partner', platform: PLATFORM },
     });
     if (error) return json(res, 400, { error: error.message });
 
@@ -40,7 +58,10 @@ export default async function handler(req, res) {
       id: created.user.id,
       email: created.user.email,
       full_name,
-      company_name: company_name || null,
+      first_name,
+      last_name,
+      company_name,
+      tss_partner_code: partner_code,
       role: 'partner',
       platform: PLATFORM,
       status: 'active',

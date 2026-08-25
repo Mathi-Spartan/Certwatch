@@ -500,3 +500,5 @@ select.sel{border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;
 .tss-card.open{grid-column:1 / -1}
 .tc-detail{margin-top:14px;padding-top:16px;border-top:1px solid #e2ece6}
 
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media(max-width:520px){.row-2{grid-template-columns:1fr}}

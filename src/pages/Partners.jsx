@@ -49,7 +49,7 @@ export default function Partners() {
           </div></div>
         ) : (
           <div className="panel"><table className="tbl">
-            <thead><tr><th>Partner</th><th>Environment</th><th>Contact email</th><th>Connection</th><th>Orders</th><th>Sub-users</th><th>Last sync</th></tr></thead>
+            <thead><tr><th>Partner</th><th>Partner code</th><th>Environment</th><th>Contact email</th><th>Connection</th><th>Orders</th><th>Sub-users</th><th>Last sync</th></tr></thead>
             <tbody>
               {list.map(p => {
                 const c = p.connection;
@@ -60,6 +60,7 @@ export default function Partners() {
                       <span className="av">{initials(p.company_name || p.full_name)}</span>
                       <span><b>{p.company_name || p.full_name}</b><span>{p.full_name}</span></span>
                     </div></td>
+                    <td className="mono">{p.tss_partner_code || <span className="mut">—</span>}</td>
                     <td>{c?.tss_environment
                       ? <span className={`env-tag ${c.tss_environment === 'sandbox' ? 'sandbox' : 'live'}`}>{c.tss_environment === 'sandbox' ? 'Sandbox' : 'Live'}</span>
                       : <span className="mut">—</span>}</td>
@@ -97,33 +98,53 @@ export default function Partners() {
 }
 
 function AddPartner({ onClose, onDone }) {
+  const [partner_code, setCode] = useState('');
   const [company_name, setCompany] = useState('');
-  const [full_name, setName] = useState('');
+  const [first_name, setFirst] = useState('');
+  const [last_name, setLast] = useState('');
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  const ready = partner_code.trim() && company_name.trim() && first_name.trim() && last_name.trim() && email.trim();
+
   return (
     <Modal title="Add partner" sub="They set their own password, then connect their own TheSSLStore account." onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !full_name || !email} onClick={async () => {
+        <button className="btn btn-primary" disabled={busy || !ready} onClick={async () => {
           setBusy(true); setErr('');
-          try { const r = await api('partners', { method: 'POST', body: { company_name, full_name, email } }); onDone(r.invite_link); }
+          try {
+            const r = await api('partners', { method: 'POST', body: { partner_code, company_name, first_name, last_name, email } });
+            onDone(r.invite_link);
+          }
           catch (e) { setErr(e.message); }
           setBusy(false);
         }}>{busy ? <><span className="spin" /> Creating</> : 'Create partner'}</button>
       </>}>
       {err && <div className="err">{err}</div>}
-      <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Company</span>
+
+      <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">TheSSLStore Partner Code</span>
+        <input className="mono" value={partner_code} onChange={e => setCode(e.target.value)} placeholder="e.g. 83300821" autoComplete="off" />
+        <div className="hint">Identifies their TheSSLStore account. Recorded here for your reference — the Auth Token still comes from them.</div></div>
+
+      <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Company name</span>
         <input value={company_name} onChange={e => setCompany(e.target.value)} /></div>
-      <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Contact name</span>
-        <input value={full_name} onChange={e => setName(e.target.value)} /></div>
-      <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Email</span>
-        <input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
+
+      <div className="row-2">
+        <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">First name</span>
+          <input value={first_name} onChange={e => setFirst(e.target.value)} autoComplete="off" /></div>
+        <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Last name</span>
+          <input value={last_name} onChange={e => setLast(e.target.value)} autoComplete="off" /></div>
+      </div>
+
+      <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Email address</span>
+        <input type="email" value={email} onChange={e => setEmail(e.target.value)} />
+        <div className="hint">Their sign-in identity, and where the invite link goes.</div></div>
+
       <div className="callout warn">
-        You are not asked for their API credentials — the partner enters their own TheSSLStore Partner
-        Code and Auth Token after signing in, and chooses Live or Sandbox at that point. Their token is
-        never visible to you.
+        You are not asked for their Auth Token — the partner enters it after signing in and chooses Live
+        or Sandbox at that point. Their token is never visible to you.
       </div>
     </Modal>
   );
