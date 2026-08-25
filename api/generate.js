@@ -107,7 +107,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const { csr, webserver_type, dcv_method, approver_email, dns_names, admin, tech } = body;
+  const { csr, webserver_type, dcv_method, approver_email, dns_names, admin, tech, signature_hash } = body;
   let cleanCsr;
   try { cleanCsr = canonicalCsr(csr); }
   catch (e) { return json(res, 400, { error: e.message }); }
@@ -137,6 +137,14 @@ export default async function handler(req, res) {
       TheSSLStoreOrderID: String(row.gg_order_id),
       CSR: cleanCsr,
       WebServerType: webserver_type || 'Other',
+      // Required. Without it DigiCert receives an incomplete certificate object
+      // and reports the whole request as 'csr_invalid — Failed to parse CSR',
+      // which is misleading: the CSR is fine. Confirmed against the sandbox —
+      // supplying this field replaces that error with a specific one.
+      // CertCentral expects the lowercase form.
+      SignatureHashAlgorithm: signature_hash || 'sha256',
+      ProductCode: (row.raw && row.raw.ProductCode) || '',
+      ValidityPeriod: (row.raw && row.raw.Validity) || 12,
       DNSNames: Array.isArray(dns_names) ? dns_names : [],
       ApproverEmail: approver_email || '',
       isCUOrder: false,
