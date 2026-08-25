@@ -135,7 +135,14 @@ export default async function handler(req, res) {
   try {
     const out = await tss.completeInvite(creds, token, {
       TheSSLStoreOrderID: String(row.gg_order_id),
-      CSR: cleanCsr,
+      DomainName: body.common_name || row.common_name || '',
+      // The API expects the CSR URL-ENCODED, not as raw PEM. Their reference
+      // payload calls this field {{csr_encoded}}. Raw PEM is rejected with
+      // 'csr_invalid — Failed to parse CSR', which reads like a CSR problem
+      // but is really an encoding one; base64 is rejected differently again
+      // ('The CSR cannot be decoded!'). Verified against the sandbox: the
+      // URL-encoded form is the one that succeeds.
+      CSR: encodeURIComponent(cleanCsr),
       WebServerType: webserver_type || 'Other',
       // Required. Without it DigiCert receives an incomplete certificate object
       // and reports the whole request as 'csr_invalid — Failed to parse CSR',
@@ -152,10 +159,21 @@ export default async function handler(req, res) {
       ServerCount: 1,
       SpecialInstructions: '',
       RelatedTheSSLStoreOrderID: '',
-      // DCV: pick exactly one indicator, mirroring the panel's radio group.
-      FileAuthDVIndicator: dcv_method === 'http',
-      HTTPSFileAuthDVIndicator: dcv_method === 'https',
-      CNAMEAuthDVIndicator: dcv_method === 'cname',
+      // ApproverMethod is a string. Note the API accepts an unrecognised value
+      // silently rather than rejecting it, so an unmapped method would place
+      // the order with the wrong DCV — map explicitly and default to EMAIL.
+      ApproverMethod: ({ http: 'FILE', https: 'FILE', cname: 'CNAME', email: 'EMAIL' })[dcv_method] || 'EMAIL',
+      OrganizationInfo: {
+        OrganizationName: (admin && admin.organization) || '',
+        OrganizationAddress: {
+          AddressLine1: (admin && admin.address) || '',
+          City: (admin && admin.city) || '',
+          Region: (admin && admin.region) || '',
+          PostalCode: (admin && admin.postal_code) || '',
+          Country: (admin && admin.country) || '',
+          Phone: (admin && admin.phone) || '',
+        },
+      },
       AdminContact: contact(admin, approver_email),
       TechnicalContact: contact(tech || admin, approver_email),
     });
