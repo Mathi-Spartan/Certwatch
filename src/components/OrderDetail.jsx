@@ -10,6 +10,71 @@ const WEBSERVERS = [
   'Plesk', 'Tomcat', 'Amazon Load Balancer', 'Other',
 ];
 
+
+/** TheSSLStore sends the literal string 'None' where a field is empty. */
+const val = (v) => {
+  const t = String(v ?? '').trim();
+  return t && t.toLowerCase() !== 'none' ? t : null;
+};
+
+/** One-click copy for a DCV token the user must paste elsewhere. */
+function Copy({ text }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" className="cp" title="Copy"
+      onClick={() => { navigator.clipboard?.writeText(text); setDone(true); setTimeout(() => setDone(false), 1400); }}>
+      {done ? 'copied' : 'copy'}
+    </button>
+  );
+}
+
+/**
+ * What the user has to DO to pass validation.
+ *
+ * The order payload already carries this — AuthFileName/AuthFileContent for
+ * HTTP validation, CNAMEAuthName/CNAMEAuthValue for DNS, ApproverEmail for
+ * email. It was synced all along and never shown, so the panel read "No
+ * validation data" while the instructions sat in the row.
+ */
+function DcvInstructions({ raw, domain }) {
+  const file = val(raw.AuthFileName), content = val(raw.AuthFileContent);
+  const cname = val(raw.CNAMEAuthName), cvalue = val(raw.CNAMEAuthValue);
+  const email = val(raw.ApproverEmail);
+  const host = (domain || '').replace(/^\*\./, '');
+
+  if (file && content) {
+    return (
+      <div className="dcv-how">
+        <div className="dcv-how-h">Upload a file to your web server</div>
+        <div className="dcv-kv"><span>Location</span>
+          <code>http://{host}/.well-known/pki-validation/{file}</code><Copy text={`http://${host}/.well-known/pki-validation/${file}`} /></div>
+        <div className="dcv-kv"><span>File contents</span><code>{content}</code><Copy text={content} /></div>
+        <p className="dcv-note">The file must be reachable over plain HTTP without a redirect, and served as text/plain.</p>
+      </div>
+    );
+  }
+  if (cname && cvalue) {
+    return (
+      <div className="dcv-how">
+        <div className="dcv-how-h">Add a CNAME record</div>
+        <div className="dcv-kv"><span>Name</span><code>{cname}</code><Copy text={cname} /></div>
+        <div className="dcv-kv"><span>Points to</span><code>{cvalue}</code><Copy text={cvalue} /></div>
+        <p className="dcv-note">DNS changes can take a while to propagate. Recheck status once the record resolves.</p>
+      </div>
+    );
+  }
+  if (email) {
+    return (
+      <div className="dcv-how">
+        <div className="dcv-how-h">Approve by email</div>
+        <div className="dcv-kv"><span>Sent to</span><code>{email}</code><Copy text={email} /></div>
+        <p className="dcv-note">Open the link in that email to approve. Use Resend approver email if it did not arrive, or Change approver to send it elsewhere.</p>
+      </div>
+    );
+  }
+  return null;
+}
+
 export default function OrderDetail({ order, profile, subusers, onChanged }) {
   const [live, setLive] = useState(order);
   const [busy, setBusy] = useState(false);
@@ -34,6 +99,8 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   const rows = dcvRows(raw);
   const pending = rows.filter(r => r.state < 2).length;
   const dead = ['cancelled', 'expired', 'rejected'].includes(live.gg_status);
+  // Whether a certificate actually exists yet decides Cancel vs Revoke.
+  const hasCert = !!(live.valid_from || live.valid_till || val(raw.SerialNumber));
   // An order bought in the TheSSLStore dashboard but never configured. It
   // carries its own enrolment token, which is what lets us complete it.
   // Only an order that was never configured can be generated. Once submitted
@@ -122,6 +189,8 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
           )}
         </div>
 
+        {!dead && <DcvInstructions raw={raw} domain={live.common_name} />}
+
         {rows.length > 0 && (
           <table className="dcv">
             <thead><tr><th>Domain</th><th>Method</th><th>Approver</th><th>State</th></tr></thead>
@@ -147,9 +216,30 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
           <button className="btn" disabled={busy} onClick={() => setModal('approver')}>Change approver</button>
           <button className="btn" disabled={busy} onClick={() => act('resend_approver', {}, 'Approver email sent again.')}>Resend approver email</button>
         </>}
+        <button className="btn" disabled={busy} onClick={async () => {
+          setBusy(true); setErr('');
+          try {
+            const r = await api('action', { method: 'POST', body: { action: 'download_csr', order_id: live.gg_order_id } });
+            const csr = r?.result?.CSR;
+            if (!csr) throw new Error('TheSSLStore has no CSR stored for this order.');
+            const u = URL.createObjectURL(new Blob([csr], { type: 'application/pkcs10' }));
+            const a = document.createElement('a');
+            a.href = u; a.download = `${live.common_name || live.gg_order_id}.csr`; a.click();
+            URL.revokeObjectURL(u);
+            setNote('CSR downloaded.');
+          } catch (e) { setErr(e.message); }
+          setBusy(false);
+        }}>Download CSR</button>
         {profile.role === 'partner' && <button className="btn" disabled={busy} onClick={() => setModal('assign')}>Assign to sub-user</button>}
         <span className="spacer" />
-        {!dead && <button className="btn btn-danger" disabled={busy} onClick={() => setModal('revoke')}>Revoke</button>}
+        {/* Cancel is for an order that has not been issued — it reclaims the
+            balance. Revoke is for one that HAS been issued and must be killed.
+            Showing both at once invites the wrong choice, so we show whichever
+            fits the order's state. */}
+        {!dead && !hasCert && (
+          <button className="btn btn-danger" disabled={busy} onClick={() => setModal('cancel')}>Cancel order</button>
+        )}
+        {!dead && hasCert && <button className="btn btn-danger" disabled={busy} onClick={() => setModal('revoke')}>Revoke</button>}
         {incomplete && !canGenerate && (
           <span className="handed-off">Assigned — the end user generates this certificate.</span>
         )}
@@ -167,6 +257,16 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       {modal === 'download' && <DownloadModal order={live} onClose={() => setModal(null)} />}
       {modal === 'approver' && <ApproverModal rows={rows} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
       {modal === 'assign' && <AssignModal order={live} subusers={subusers} onClose={() => setModal(null)} onDone={onChanged} />}
+      {modal === 'cancel' && (
+        <ReasonModal
+          title="Cancel this order"
+          sub="The order has not been issued, so cancelling asks TheSSLStore to refund it to your balance."
+          confirm="Cancel order"
+          busy={busy}
+          onClose={() => setModal(null)}
+          onSubmit={(reason) => act('refund', { reason }, 'Cancellation requested. TheSSLStore will confirm the refund.')}
+        />
+      )}
       {modal === 'revoke' && <RevokeModal order={live} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
     </div>
   );
@@ -582,6 +682,28 @@ function GenerateModal({ order, onClose, onDone }) {
         <span className="lbl">Additional domains <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--muted)', fontWeight: 400 }}>— optional</span></span>
         <input className="mono" value={sans} onChange={e => setSans(e.target.value)} placeholder="www.example.com, mail.example.com" />
         <div className="hint">Only if this product includes SAN capacity.</div>
+      </div>
+    </Modal>
+  );
+}
+
+
+/** Small confirm-with-a-reason dialog, used for cancel. */
+function ReasonModal({ title, sub, confirm, busy, onClose, onSubmit }) {
+  const [reason, setReason] = useState('');
+  return (
+    <Modal title={title} sub={sub} onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onClose} disabled={busy}>Keep order</button>
+        <button className="btn btn-danger" disabled={busy || !reason.trim()}
+          onClick={() => onSubmit(reason.trim())}>
+          {busy ? <><span className="spin" /> Working</> : confirm}
+        </button>
+      </>}>
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Reason</span>
+        <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Why is this being cancelled?" autoFocus />
+        <div className="hint">TheSSLStore records this against the refund request.</div>
       </div>
     </Modal>
   );

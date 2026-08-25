@@ -30,7 +30,6 @@ const ACTIONS = {
   order_info:    (c, id) => tss.orderInfo(c, id),
   check_dcv:     (c, id, p) => tss.checkDcv(c, id, p.domain),
   approver_list: (c, id, p) => tss.approverList(c, p.domain, p.product_code),
-  add_san:       (c, id, p) => tss.addSan(c, id, { san: p.san_count, wildcard: p.wildcard_count }),
 };
 
 /** Actions that only read — they should not re-sync or write an order row. */
@@ -46,8 +45,11 @@ export default async function handler(req, res) {
   const body = await readBody(req);
   const { action, order_id } = body;
 
-  if (action === 'renew') {
-    return json(res, 403, { error: 'Renewals are placed from TheSSLStore directly. This portal never spends a balance.' });
+  // Anything that spends the partner's balance is refused here, not just
+  // renewal. /order/addsan buys extra SAN capacity, so it belongs in the same
+  // category and is deliberately not routed.
+  if (action === 'renew' || action === 'add_san') {
+    return json(res, 403, { error: 'Purchases are made from TheSSLStore directly. This portal never spends a balance.' });
   }
   if (!order_id) return json(res, 400, { error: 'Missing order' });
 
