@@ -57,6 +57,37 @@ async function call(creds, path, payload = {}) {
   return json;
 }
 
+/**
+ * Token-mode call: authenticate as one specific order rather than as the
+ * partner. PartnerCode and AuthToken are deliberately empty — the token is the
+ * whole credential, and it only reaches the order it was minted for. Only the
+ * environment is taken from the partner's saved credentials, to pick the right
+ * base URL.
+ */
+async function callWithToken(creds, token, path, payload = {}) {
+  const base = BASE[creds.environment] || BASE.live;
+  const res = await fetch(base + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      AuthRequest: {
+        PartnerCode: '', AuthToken: '', ReplayToken: '',
+        UserAgent: 'Certwatch', IsUsedForTokenSystem: true, Token: token,
+      },
+      ...payload,
+    }),
+  });
+  const text = await res.text();
+  let json;
+  try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
+  const ar = Array.isArray(json) ? null : json.AuthResponse;
+  if (ar && ar.isError) {
+    throw new TSSError((ar.Message && ar.Message[0]) || 'TheSSLStore rejected the request', json);
+  }
+  if (!res.ok) throw new TSSError(`TheSSLStore returned ${res.status}`, json);
+  return json;
+}
+
 export const tss = {
   /** The whole order book, every status. Optional paging. */
   listOrders: (creds, { pageNumber, pageSize } = {}) =>
@@ -102,6 +133,18 @@ export const tss = {
   /** Certificate material for an issued order. */
   download: (creds, orderId) =>
     call(creds, '/order/download', { TheSSLStoreOrderID: String(orderId) }),
+
+  /**
+   * Complete an order bought in the dashboard but never configured.
+   *
+   * The decisive detail: authentication is the ORDER'S OWN token, not the
+   * partner's PartnerCode/AuthToken. With IsUsedForTokenSystem set, this call
+   * configures the existing paid order instead of placing a new billable one —
+   * so it cannot spend a partner's balance. This is the API path behind the
+   * "Generate Cert Now" button in the TheSSLStore panel.
+   */
+  completeInvite: (creds, token, payload) =>
+    callWithToken(creds, token, '/order/neworder', payload),
 
   downloadZip: (creds, orderId) =>
     call(creds, '/order/downloadaszip', { TheSSLStoreOrderID: String(orderId), ReturnPKCS7Cert: false }),

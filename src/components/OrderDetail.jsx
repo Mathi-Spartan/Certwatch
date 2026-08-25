@@ -34,6 +34,10 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   const rows = dcvRows(raw);
   const pending = rows.filter(r => r.state < 2).length;
   const dead = ['cancelled', 'expired', 'rejected'].includes(live.gg_status);
+  // An order bought in the TheSSLStore dashboard but never configured. It
+  // carries its own enrolment token, which is what lets us complete it.
+  const incomplete = live.gg_status === 'processing'
+    && !!(raw.Token || (raw.TokenID && raw.TokenCode));
   const isSub = profile.role === 'sub_user';
 
   async function act(action, body = {}, okMessage) {
@@ -112,7 +116,8 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
       </div>
 
       <div className="acts">
-        {!dead && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
+        {incomplete && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('generate')}>Generate certificate</button>}
+        {!dead && !incomplete && <button className="btn btn-primary" disabled={busy} onClick={() => setModal('reissue')}>Reissue certificate</button>}
         <button className="btn" disabled={busy} onClick={() => setModal('download')}>Download</button>
         {!dead && <>
           <button className="btn" disabled={busy} onClick={() => setModal('approver')}>Change approver</button>
@@ -129,6 +134,8 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
         </div>
       </div>
 
+      {modal === 'generate' && <GenerateModal order={live} onClose={() => setModal(null)}
+        onDone={(m) => { setModal(null); setNote(m); onChanged?.(); }} />}
       {modal === 'reissue' && <ReissueModal order={live} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
       {modal === 'download' && <DownloadModal order={live} onClose={() => setModal(null)} />}
       {modal === 'approver' && <ApproverModal rows={rows} busy={busy} onClose={() => setModal(null)} onSubmit={act} />}
@@ -382,6 +389,150 @@ function RevokeModal({ order, busy, onClose, onSubmit }) {
         <input value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. key compromise, superseded" />
       </div>
       <div className="callout warn">Revoking is permanent. The certificate stops being trusted once the CA processes the request.</div>
+    </Modal>
+  );
+}
+/**
+ * Complete an order that was bought in the TheSSLStore dashboard but never
+ * configured. Collects what /order/neworder needs, then hands it to the server,
+ * which presents the order's own enrolment token — so nothing here can spend a
+ * partner's balance, and the token itself never reaches the browser.
+ */
+function GenerateModal({ order, onClose, onDone }) {
+  const [domain, setDomain] = useState(order.common_name || '');
+  const [mode, setMode] = useState('generate');       // generate | paste
+  const [csr, setCsr] = useState('');
+  const [server, setServer] = useState('Other');
+  const [dcv, setDcv] = useState('email');
+  const [email, setEmail] = useState('');
+  const [sans, setSans] = useState('');
+  const [first, setFirst] = useState('');
+  const [last, setLast] = useState('');
+  const [phone, setPhone] = useState('');
+  const [org, setOrg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState('');
+  const [err, setErr] = useState('');
+
+  const approvers = domain
+    ? ['admin', 'administrator', 'hostmaster', 'postmaster', 'webmaster'].map(u => `${u}@${domain.replace(/^\*\./, '')}`)
+    : [];
+
+  const ready = domain.trim() && first.trim() && last.trim() && email.trim()
+    && (mode === 'generate' || csr.includes('CERTIFICATE REQUEST'));
+
+  async function submit() {
+    setBusy(true); setErr('');
+    try {
+      let finalCsr = csr;
+      if (mode === 'generate') {
+        setStep('Generating your key and CSR in this browser…');
+        const bundle = await generateCsrBundle({ commonName: domain.trim() });
+        await bundle.downloadZip();
+        finalCsr = bundle.csrPem;
+      }
+      setStep('Submitting to TheSSLStore…');
+      await api('generate', {
+        method: 'POST',
+        body: {
+          order_id: order.gg_order_id,
+          common_name: domain.trim(),
+          csr: finalCsr,
+          webserver_type: server,
+          dcv_method: dcv,
+          approver_email: email.trim(),
+          dns_names: sans.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
+          admin: {
+            first_name: first.trim(), last_name: last.trim(), phone: phone.trim(),
+            email: email.trim(), organization: org.trim(),
+          },
+        },
+      });
+      onDone(mode === 'generate'
+        ? 'Submitted. Your private key downloaded as a ZIP — it was never sent to us and cannot be recovered here.'
+        : 'Submitted to TheSSLStore. Validation is next.');
+    } catch (e) { setErr(e.message); }
+    setBusy(false); setStep('');
+  }
+
+  return (
+    <Modal
+      title="Generate certificate"
+      sub="This order is paid for but never configured. Filling this in completes it — no new charge."
+      onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+        <button className="btn btn-primary" disabled={busy || !ready} onClick={submit}>
+          {busy ? <><span className="spin" /> {step || 'Working'}</> : 'Generate certificate'}
+        </button>
+      </>}>
+      {err && <div className="err">{err}</div>}
+
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Domain (common name)</span>
+        <input className="mono" value={domain} onChange={e => setDomain(e.target.value)} placeholder="example.com" />
+        <div className="hint">Use <span className="mono">*.example.com</span> for a wildcard, if this product allows one.</div>
+      </div>
+
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Certificate signing request</span>
+        <div className="tabs" style={{ marginBottom: 10 }}>
+          <button type="button" className={mode === 'generate' ? 'on' : ''} onClick={() => setMode('generate')}>Generate for me</button>
+          <button type="button" className={mode === 'paste' ? 'on' : ''} onClick={() => setMode('paste')}>Paste my own</button>
+        </div>
+        {mode === 'generate'
+          ? <div className="callout">A 2048-bit key and CSR are made in your browser. The private key downloads as a ZIP and is never sent to us — we could not recover it for you, so keep it safe.</div>
+          : <textarea className="mono" value={csr} onChange={e => setCsr(e.target.value)}
+              placeholder="-----BEGIN CERTIFICATE REQUEST-----" style={{ minHeight: 120 }} />}
+      </div>
+
+      <div className="row-2">
+        <div className="field" style={{ maxWidth: 'none' }}>
+          <span className="lbl">Web server</span>
+          <select className="sel" value={server} onChange={e => setServer(e.target.value)}>
+            {['Other', 'Apache', 'Nginx', 'IIS', 'Tomcat', 'cPanel', 'Plesk', 'AWS', 'Exchange'].map(x => <option key={x}>{x}</option>)}
+          </select>
+        </div>
+        <div className="field" style={{ maxWidth: 'none' }}>
+          <span className="lbl">Validation method</span>
+          <select className="sel" value={dcv} onChange={e => setDcv(e.target.value)}>
+            <option value="email">Email to approver</option>
+            <option value="http">HTTP file</option>
+            <option value="https">HTTPS file</option>
+            <option value="cname">CNAME record</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">{dcv === 'email' ? 'Approver email' : 'Contact email'}</span>
+        {dcv === 'email' && approvers.length
+          ? <select className="sel" value={email} onChange={e => setEmail(e.target.value)}>
+              <option value="">Choose an address…</option>
+              {approvers.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          : <input type="email" value={email} onChange={e => setEmail(e.target.value)} />}
+        {dcv === 'email' && <div className="hint">The CA only accepts these fixed addresses at the domain.</div>}
+      </div>
+
+      <div className="row-2">
+        <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">First name</span>
+          <input value={first} onChange={e => setFirst(e.target.value)} /></div>
+        <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Last name</span>
+          <input value={last} onChange={e => setLast(e.target.value)} /></div>
+      </div>
+      <div className="row-2">
+        <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Phone</span>
+          <input value={phone} onChange={e => setPhone(e.target.value)} /></div>
+        <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Organisation</span>
+          <input value={org} onChange={e => setOrg(e.target.value)} /></div>
+      </div>
+
+      <div className="field" style={{ maxWidth: 'none' }}>
+        <span className="lbl">Additional domains <span style={{ textTransform: 'none', letterSpacing: 0, color: 'var(--muted)', fontWeight: 400 }}>— optional</span></span>
+        <input className="mono" value={sans} onChange={e => setSans(e.target.value)} placeholder="www.example.com, mail.example.com" />
+        <div className="hint">Only if this product includes SAN capacity.</div>
+      </div>
     </Modal>
   );
 }
