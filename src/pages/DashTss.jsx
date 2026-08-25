@@ -4,57 +4,111 @@ import { lifecycle, fmtTime } from '../lib/lifecycle.js';
 import OrderDetail from '../components/OrderDetail.jsx';
 
 /**
- * TheSSLStore dashboard — lifecycle-forward.
+ * TheSSLStore order book — laid out the way the TheSSLStore panel lays it out,
+ * so a partner can read both without translating between them.
  *
- * TheSSLStore returns the whole book in one sync, so this view is built around
- * a complete book ageing predictably: a "complete book" confirmation, a
- * lifecycle timeline, and rich per-order cards. It never talks about import,
- * because there is nothing to import here.
+ * Columns match theirs: Date, Domain/Company, Order ID, Product, Price, Expire,
+ * Status. Two details matter for that to line up:
+ *
+ *   1. Their "Order ID" is VendorOrderID, not TheSSLStoreOrderID. We show the
+ *      vendor id as the headline and keep the TSS id beneath it, because the
+ *      TSS id is what every API call is keyed on.
+ *   2. Their "Incomplete" is our 'processing' / MajorStatus 'Pending' — an order
+ *      bought but never taken through CSR and validation.
+ *
+ * Price and purchase date come straight from the stored payload; nothing extra
+ * is fetched to render this.
  */
+
+const CHIPS = [
+  { id: 'all', label: 'All orders' },
+  { id: 'active', label: 'Complete' },
+  { id: 'processing', label: 'Incomplete' },
+  { id: 'expiring', label: 'Expiring' },
+  { id: 'expired', label: 'Expired' },
+  { id: 'cancelled', label: 'Cancelled' },
+];
+
+/** TheSSLStore dates arrive as "8/25/2026 6:20:49 AM"; 1/1/1900 is their null. */
+function tssDate(v) {
+  if (!v || String(v).startsWith('1/1/1900')) return null;
+  const d = new Date(v);
+  return isNaN(d) ? null : d;
+}
+const fmtDate = (d) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null);
+
+function statusOf(o, certEnd) {
+  const minor = (o.raw?.OrderStatus?.MinorStatus || '').toLowerCase();
+  if (minor === 'revoked') return { key: 'cancelled', cls: 'can', label: 'Revoked' };
+  // TheSSLStore keeps reporting MajorStatus 'Active' after a certificate has
+  // expired — their own panel derives expiry at display time from the end date,
+  // so we do the same or an expired cert reads as Complete here.
+  if (o.gg_status === 'active' && certEnd && certEnd < new Date()) {
+    return { key: 'expired', cls: 'exp', label: 'Expired' };
+  }
+  switch (o.gg_status) {
+    case 'active':     return { key: 'active', cls: 'act', label: 'Complete' };
+    case 'processing': return { key: 'processing', cls: 'pend', label: 'Incomplete' };
+    case 'expired':    return { key: 'expired', cls: 'exp', label: 'Expired' };
+    case 'cancelled':  return { key: 'cancelled', cls: 'can', label: 'Cancelled' };
+    default:           return { key: o.gg_status || 'unknown', cls: 'mute', label: o.gg_status || 'Unknown' };
+  }
+}
+
 export default function DashTss({ data, orders, syncing, onSync, q, setQ, profile, onChanged }) {
-  const stats = useMemo(() => {
-    const active = orders.filter(o => o.gg_status === 'active');
-    const pending = orders.filter(o => o.gg_status === 'processing');
-    const soon = active.filter(o => {
-      const lc = lifecycle(o); return lc && lc.toReissue != null && lc.toReissue < 45;
-    });
-    return { total: orders.length, active: active.length, soon: soon.length, pending: pending.length };
-  }, [orders]);
+  const [chip, setChip] = useState('all');
+  const [open, setOpen] = useState(null);
+
+  const rows = useMemo(() => orders.map(o => {
+    const raw = o.raw || {};
+    const certEnd = tssDate(raw.CertificateEndDate) || (o.valid_till ? new Date(o.valid_till) : null);
+    const st = statusOf(o, certEnd);
+    const lc = lifecycle(o);
+    return {
+      o, raw, st, lc, certEnd,
+      purchased: tssDate(raw.PurchaseDate),
+      vendorId: raw.VendorOrderID || null,
+      amount: raw.OrderAmount != null ? Number(raw.OrderAmount) : null,
+      domain: o.common_name || raw.CommonName || raw.Organization || null,
+      expiringSoon: st.key === 'active' && lc && lc.toReissue != null && lc.toReissue < 45,
+    };
+  }), [orders]);
+
+  const counts = useMemo(() => ({
+    all: rows.length,
+    active: rows.filter(r => r.st.key === 'active').length,
+    processing: rows.filter(r => r.st.key === 'processing').length,
+    expiring: rows.filter(r => r.expiringSoon).length,
+    expired: rows.filter(r => r.st.key === 'expired').length,
+    cancelled: rows.filter(r => r.st.key === 'cancelled').length,
+  }), [rows]);
 
   const filtered = useMemo(() => {
-    if (!q.trim()) return orders;
-    const s = q.toLowerCase();
-    return orders.filter(o =>
-      (o.common_name || '').toLowerCase().includes(s) ||
-      (o.product_name || '').toLowerCase().includes(s) ||
-      String(o.gg_order_id).includes(s));
-  }, [orders, q]);
+    let list = rows;
+    if (chip === 'expiring') list = list.filter(r => r.expiringSoon);
+    else if (chip !== 'all') list = list.filter(r => r.st.key === chip);
+
+    const s = q.trim().toLowerCase();
+    if (s) list = list.filter(r =>
+      (r.domain || '').toLowerCase().includes(s) ||
+      (r.o.product_name || '').toLowerCase().includes(s) ||
+      String(r.o.gg_order_id).includes(s) ||
+      String(r.vendorId || '').includes(s));
+
+    // Newest purchase first, undated last — the panel's default ordering.
+    return [...list].sort((a, b) => (b.purchased?.getTime() || 0) - (a.purchased?.getTime() || 0));
+  }, [rows, chip, q]);
 
   return (
     <div className="tss-dash">
       <div className="gp-head">
         <div>
-          <h1>Certificate overview</h1>
-          <p>Your entire order book, pulled in one sync — every status, always complete.</p>
+          <h1>Orders</h1>
+          <p>Your entire TheSSLStore order book, pulled in one call — every status, always complete.</p>
         </div>
         <button className="btn btn-primary tss-btn" onClick={onSync} disabled={syncing}>
           {syncing ? <><span className="spin" /> Syncing</> : 'Sync now'}
         </button>
-      </div>
-
-      {orders.length > 0 && (
-        <div className="tss-complete">
-          <svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5" /></svg>
-          Complete book — {orders.length} orders synced in one call
-          {data.connection?.last_sync_at ? `, updated ${fmtTime(data.connection.last_sync_at)}` : ''}. Nothing to import.
-        </div>
-      )}
-
-      <div className="tss-stats">
-        <div className="tss-stat"><div className="n">{stats.total}</div><div className="k">Total orders</div></div>
-        <div className="tss-stat"><div className="n">{stats.active}</div><div className="k">Active</div></div>
-        <div className="tss-stat hot"><div className="n">{stats.soon}</div><div className="k">Reissue &lt; 45d</div></div>
-        <div className="tss-stat"><div className="n">{stats.pending}</div><div className="k">Pending validation</div></div>
       </div>
 
       {orders.length === 0 ? (
@@ -64,8 +118,7 @@ export default function DashTss({ data, orders, syncing, onSync, q, setQ, profil
               <h3>Connected, but this account has no orders</h3>
               <p style={{ maxWidth: '52ch', margin: '0 auto 16px' }}>
                 We reached your TheSSLStore account{data.connection.last_sync_at ? ` at ${fmtTime(data.connection.last_sync_at)}` : ''} and
-                it returned an empty book. TheSSLStore lists every order in one call — cancelled included — so
-                if orders exist they will appear here. Check you connected the right environment.
+                it returned an empty book. Check you connected the right environment.
               </p>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
                 <button className="btn btn-primary tss-btn" onClick={onSync} disabled={syncing}>{syncing ? 'Syncing' : 'Sync again'}</button>
@@ -82,63 +135,88 @@ export default function DashTss({ data, orders, syncing, onSync, q, setQ, profil
         </div>
       ) : (
         <>
-          <input className="tss-search" placeholder="Search domain, order ID or product"
-                 value={q} onChange={e => setQ(e.target.value)} />
-          <div className="tss-grid">
-            {filtered.map(o => <TssCard key={o.gg_order_id} o={o} profile={profile} subusers={data.subusers || []} onChanged={onChanged} />)}
+          <div className="ob-bar">
+            <div className="ob-chips">
+              {CHIPS.map(c => (
+                <button key={c.id}
+                        className={`ob-chip${chip === c.id ? ' on' : ''}${c.id === 'expiring' && counts.expiring ? ' warn' : ''}`}
+                        onClick={() => { setChip(c.id); setOpen(null); }}>
+                  {c.label}<span className="n">{counts[c.id] ?? 0}</span>
+                </button>
+              ))}
+            </div>
+            <input className="ob-search" placeholder="Search domain, order ID or product"
+                   value={q} onChange={e => setQ(e.target.value)} />
+          </div>
+
+          {data.connection?.last_sync_at && (
+            <div className="ob-synced">
+              Complete book — {orders.length} orders in one call, updated {fmtTime(data.connection.last_sync_at)}.
+            </div>
+          )}
+
+          <div className="panel ob-panel">
+            <table className="ob-tbl">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Domain / Company</th>
+                  <th>Order ID</th>
+                  <th>Product</th>
+                  <th className="r">Price</th>
+                  <th>Expires</th>
+                  <th>Status</th>
+                  <th aria-label="Actions" />
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={8} className="ob-none">Nothing matches that filter.</td></tr>
+                )}
+                {filtered.map(r => {
+                  const id = r.o.gg_order_id;
+                  const isOpen = open === id;
+                  return [
+                    <tr key={id} className={`ob-row${isOpen ? ' open' : ''}`} onClick={() => setOpen(isOpen ? null : id)}>
+                      <td className="mono dim">{fmtDate(r.purchased) || '—'}</td>
+                      <td>
+                        {r.domain
+                          ? <span className="ob-dom mono">{r.domain}</span>
+                          : <span className="dim">—</span>}
+                        {r.raw.SANCount > 0 && <span className="ob-san">+{r.raw.SANCount} SAN</span>}
+                      </td>
+                      <td>
+                        <span className="mono">{r.vendorId || '—'}</span>
+                        <span className="ob-sub mono">TSS {id}</span>
+                      </td>
+                      <td>
+                        <span className="ob-prod">{r.o.product_name || r.raw.ProductName || '—'}</span>
+                        {r.raw.SubVendorName && <span className="ob-sub">{r.raw.SubVendorName}</span>}
+                      </td>
+                      <td className="mono r">{r.amount != null ? `$${r.amount.toFixed(2)}` : '—'}</td>
+                      <td className="mono dim">
+                        {fmtDate(r.certEnd) || '—'}
+                        {r.expiringSoon && <span className="ob-soon">{r.lc.toReissue}d</span>}
+                      </td>
+                      <td><span className={`pill ${r.st.cls}`}>{r.st.label}</span></td>
+                      <td className="r"><span className="ob-caret">{isOpen ? '\u25B2' : '\u25BC'}</span></td>
+                    </tr>,
+                    isOpen && (
+                      <tr key={id + '-d'} className="ob-detail-row">
+                        <td colSpan={8}>
+                          <div className="ob-detail" onClick={e => e.stopPropagation()}>
+                            <OrderDetail order={r.o} profile={profile} subusers={data.subusers || []} onChanged={onChanged} />
+                          </div>
+                        </td>
+                      </tr>
+                    ),
+                  ];
+                })}
+              </tbody>
+            </table>
           </div>
         </>
       )}
     </div>
   );
-}
-
-function TssCard({ o, profile, subusers, onChanged }) {
-  const [open, setOpen] = useState(false);
-  const lc = lifecycle(o);
-  const dead = ['cancelled', 'expired'].includes(o.gg_status);
-  const pending = o.gg_status === 'processing';
-  const pctElapsed = lc ? Math.round(((lc.total - lc.toOrderEnd) / lc.total) * 100) : null;
-  const pct = pctElapsed != null ? Math.min(Math.max(pctElapsed, 2), 100) : (dead ? 100 : 4);
-  const statusClass = o.gg_status === 'active' ? 'act' : pending ? 'pend' : 'can';
-  const statusLabel = o.gg_status === 'active' ? 'Active' : pending ? 'Pending' : o.gg_status === 'expired' ? 'Expired' : 'Cancelled';
-
-  // four-stage lane: ordered → validated → issued → live
-  const stage = pending ? 1 : o.gg_status === 'active' ? 3 : dead ? 0 : 2;
-
-  return (
-    <div className={`tss-card${open ? ' open' : ''}`}>
-      <div className="tc-head" onClick={() => setOpen(v => !v)} style={{ cursor: 'pointer' }}>
-        <div>
-          <div className="tc-dom mono">{o.common_name || o.product_name || 'Order ' + o.gg_order_id}</div>
-          <div className="tc-prod">{o.product_name || '—'}</div>
-        </div>
-        <span className={`pill ${statusClass}`}>{statusLabel}</span>
-      </div>
-      <div className="tc-mini" style={dead ? { opacity: .35 } : undefined}>
-        <i style={{ width: `${pct}%`, background: dead ? 'var(--muted)' : undefined }} />
-      </div>
-      <div className="tc-meta">
-        <div><div className="k">Validity</div><div className="v">{o.valid_from ? `${fmtShort(o.valid_from)} → ${fmtShort(o.valid_till)}` : '—'}</div></div>
-        <div><div className="k">{pending ? 'Stage' : 'Reissue in'}</div><div className="v" style={lc && lc.toReissue != null && lc.toReissue < 45 ? { color: 'var(--amber)' } : undefined}>{pending ? 'Validation' : lc && lc.toReissue != null && !dead ? `${lc.toReissue}d` : '—'}</div></div>
-        <div><div className="k">Order</div><div className="v">{o.gg_order_id}</div></div>
-      </div>
-      <div className="tc-lane">
-        {[0, 1, 2, 3].map(i => <div key={i} className={`lane${i < stage ? ' done' : i === stage && !dead ? ' now' : ''}`} />)}
-      </div>
-      <button className="tc-expand" onClick={() => setOpen(v => !v)}>{open ? 'Close' : 'Manage certificate'} {open ? '▲' : '▼'}</button>
-      {open && (
-        <div className="tc-detail" onClick={e => e.stopPropagation()}>
-          <OrderDetail order={o} profile={profile} subusers={subusers} onChanged={onChanged} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function fmtShort(d) {
-  if (!d) return '—';
-  const dt = new Date(d);
-  if (isNaN(dt)) return d;
-  return dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
