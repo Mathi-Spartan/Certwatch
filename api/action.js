@@ -22,10 +22,19 @@ const ACTIONS = {
     domainNames: p.domain,
   }),
   revoke: (c, id, p) => tss.revoke(c, id, p.reason),
+
+  // Added from the OpenAPI spec — all verified to exist.
+  refund:        (c, id, p) => tss.refund(c, id, p.reason),
+  download_csr:  (c, id) => tss.downloadCsr(c, id),
+  live_status:   (c, id) => tss.liveStatus(c, id),
+  order_info:    (c, id) => tss.orderInfo(c, id),
+  check_dcv:     (c, id, p) => tss.checkDcv(c, id, p.domain),
+  approver_list: (c, id, p) => tss.approverList(c, p.domain, p.product_code),
+  add_san:       (c, id, p) => tss.addSan(c, id, { san: p.san_count, wildcard: p.wildcard_count }),
 };
 
 /** Actions that only read — they should not re-sync or write an order row. */
-const READ_ONLY = new Set(['download']);
+const READ_ONLY = new Set(['download', 'download_csr', 'order_info', 'approver_list', 'check_dcv']);
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });

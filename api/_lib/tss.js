@@ -131,14 +131,14 @@ export const tss = {
     }),
 
   revoke: (creds, orderId, reason) =>
-    call(creds, '/order/revokerequest', {
+    call(creds, '/order/certificaterevokerequest', {
       TheSSLStoreOrderID: String(orderId),
       RefundReason: reason || 'Revoked from Certwatch',
     }),
 
   /** Certificate material for an issued order. */
   download: (creds, orderId) =>
-    call(creds, '/order/download', { TheSSLStoreOrderID: String(orderId) }),
+    call(creds, '/order/certificate/download', { TheSSLStoreOrderID: String(orderId) }),
 
   /**
    * Complete an order bought in the dashboard but never configured.
@@ -152,8 +152,78 @@ export const tss = {
   completeInvite: (creds, token, payload) =>
     callWithToken(creds, token, '/order/neworder', payload),
 
+
+  /**
+   * The approver addresses the CA will actually accept for a domain.
+   *
+   * We had been guessing these (admin@, administrator@, hostmaster@,
+   * postmaster@, webmaster@). That is the usual set but it is not authoritative
+   * — the CA decides, and it can include addresses from WHOIS. Ask instead.
+   */
+  approverList: (creds, domain, productCode) =>
+    call(creds, '/order/approverlist', {
+      DomainName: domain,
+      ProductCode: productCode || '',
+    }),
+
+  /**
+   * Real-time status, straight from the CA rather than TheSSLStore's cached
+   * copy. /order/status can lag; this is the one to use when a user is sitting
+   * there waiting for validation to complete.
+   */
+  liveStatus: (creds, orderId) =>
+    call(creds, '/order/live-order-status', { TheSSLStoreOrderID: String(orderId) }),
+
+  /** Complete order detail — fuller than /order/status. */
+  orderInfo: (creds, orderId) =>
+    call(creds, '/order/info', { TheSSLStoreOrderID: String(orderId) }),
+
+  /**
+   * Domain control validation state for a DigiCert order: which method is in
+   * play, what token to publish, and whether the CA has seen it yet. This is
+   * what fills the DCV panel that currently reads "No validation data".
+   */
+  checkDcv: (creds, orderId, domain) =>
+    call(creds, '/digicert/checkdcv', {
+      TheSSLStoreOrderID: String(orderId),
+      DomainName: domain || '',
+    }),
+
+  /** DigiCert domain info — validation state and expiry of that validation. */
+  domainInfo: (creds, domain) =>
+    call(creds, '/digicert/getdomaininfo', { DomainName: domain }),
+
+  /**
+   * Dry-run an order request. Same schema as /order/neworder but nothing is
+   * placed. Given how quietly this API swallows bad values, validating first is
+   * the difference between a clear message and a silently wrong order.
+   */
+  validateOrder: (creds, payload) =>
+    call(creds, '/order/validateorderparameters', payload),
+
+  /** The CSR that was actually submitted, for a customer who lost theirs. */
+  downloadCsr: (creds, orderId) =>
+    call(creds, '/order/certificate/csr/download', { TheSSLStoreOrderID: String(orderId) }),
+
+  /** Cancel an order and request the balance back. */
+  refund: (creds, orderId, reason) =>
+    call(creds, '/order/refundrequest', {
+      TheSSLStoreOrderID: String(orderId),
+      RefundReason: reason || 'Cancelled from Certwatch',
+    }),
+
+  /** Decode a CSR so the user can check it before submitting. */
+  decodeCsr: (creds, csr) => call(creds, '/csr/decodecsr', { CSR: csr }),
+
+  /** Buy extra SAN capacity on an existing multi-domain order. */
+  addSan: (creds, orderId, { san = 0, wildcard = 0 }) =>
+    call(creds, '/order/addsan', {
+      TheSSLStoreOrderID: String(orderId),
+      ExtraSANCount: san, ExtraWildcardSANCount: wildcard,
+    }),
+
   downloadZip: (creds, orderId) =>
-    call(creds, '/order/downloadaszip', { TheSSLStoreOrderID: String(orderId), ReturnPKCS7Cert: false }),
+    call(creds, '/order/certificate/downloadaszip', { TheSSLStoreOrderID: String(orderId), ReturnPKCS7Cert: false }),
 };
 
 /**

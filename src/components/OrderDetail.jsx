@@ -100,7 +100,22 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
             <button className="btn btn-sm" style={{ marginLeft: 'auto' }} disabled={busy}
               onClick={async () => {
                 setBusy(true); setErr('');
-                try { setLive(await api(`orders?id=${encodeURIComponent(live.gg_order_id)}`)); setNote('Validation status re-read from the CA.'); }
+                try {
+                  // Ask the CA directly rather than re-reading our cached row:
+                  // /digicert/checkdcv reports the live validation state, and
+                  // /order/live-order-status the live order state. Our stored
+                  // copy only changes when a sync happens to run.
+                  await api('action', { method: 'POST', body: {
+                    action: 'check_dcv', order_id: live.gg_order_id,
+                    domain: live.common_name || '',
+                  } }).catch(() => null);
+                  await api('action', { method: 'POST', body: {
+                    action: 'live_status', order_id: live.gg_order_id,
+                  } }).catch(() => null);
+                  setLive(await api(`orders?id=${encodeURIComponent(live.gg_order_id)}`));
+                  setNote('Validation state re-read from the certificate authority.');
+                  onChanged?.();
+                }
                 catch (e) { setErr(e.message); }
                 setBusy(false);
               }}>Recheck status</button>
@@ -426,9 +441,32 @@ function GenerateModal({ order, onClose, onDone }) {
   const [step, setStep] = useState('');
   const [err, setErr] = useState('');
 
-  const approvers = domain
+  // The CA decides which addresses it will accept, and the list can include
+  // WHOIS contacts we could never guess. Ask the API rather than assuming the
+  // usual five.
+  const [approvers, setApprovers] = useState([]);
+  useEffect(() => {
+    const d = domain.trim();
+    if (!d || dcv !== 'email') return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api('action', { method: 'POST', body: {
+          action: 'approver_list', order_id: order.gg_order_id,
+          domain: d, product_code: order.raw?.ProductCode || '',
+        } });
+        const list = (r?.result?.ApproverEmailList || r?.result?.ApproverEmails || [])
+          .map(x => (typeof x === 'string' ? x : x.Email || x.ApproverEmail)).filter(Boolean);
+        if (!cancelled && list.length) setApprovers(list);
+      } catch { /* fall back to the conventional five below */ }
+    }, 500);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [domain, dcv, order]);
+
+  const fallbackApprovers = domain
     ? ['admin', 'administrator', 'hostmaster', 'postmaster', 'webmaster'].map(u => `${u}@${domain.replace(/^\*\./, '')}`)
     : [];
+  const approverChoices = approvers.length ? approvers : fallbackApprovers;
 
   const ready = domain.trim() && first.trim() && last.trim() && email.trim()
     && (mode === 'generate' || csr.includes('CERTIFICATE REQUEST'));
@@ -518,10 +556,10 @@ function GenerateModal({ order, onClose, onDone }) {
 
       <div className="field" style={{ maxWidth: 'none' }}>
         <span className="lbl">{dcv === 'email' ? 'Approver email' : 'Contact email'}</span>
-        {dcv === 'email' && approvers.length
+        {dcv === 'email' && approverChoices.length
           ? <select className="sel" value={email} onChange={e => setEmail(e.target.value)}>
               <option value="">Choose an address…</option>
-              {approvers.map(a => <option key={a} value={a}>{a}</option>)}
+              {approverChoices.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           : <input type="email" value={email} onChange={e => setEmail(e.target.value)} />}
         {dcv === 'email' && <div className="hint">The CA only accepts these fixed addresses at the domain.</div>}

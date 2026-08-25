@@ -132,8 +132,7 @@ export default async function handler(req, res) {
     Country: c.country || '',
   });
 
-  try {
-    const out = await tss.completeInvite(creds, token, {
+  const orderPayload = {
       TheSSLStoreOrderID: String(row.gg_order_id),
       DomainName: body.common_name || row.common_name || '',
       // The API expects the CSR URL-ENCODED, not as raw PEM. Their reference
@@ -159,10 +158,15 @@ export default async function handler(req, res) {
       ServerCount: 1,
       SpecialInstructions: '',
       RelatedTheSSLStoreOrderID: '',
-      // ApproverMethod is a string. Note the API accepts an unrecognised value
-      // silently rather than rejecting it, so an unmapped method would place
-      // the order with the wrong DCV — map explicitly and default to EMAIL.
-      ApproverMethod: ({ http: 'FILE', https: 'FILE', cname: 'CNAME', email: 'EMAIL' })[dcv_method] || 'EMAIL',
+      // DCV selection on a NEW order is carried by these three booleans, not by
+      // ApproverMethod — the OpenAPI NewOrderRequest schema has no such field,
+      // which is why a bogus ApproverMethod was accepted without complaint: it
+      // was simply ignored. All three false means email validation.
+      // (ApproverMethod IS correct on /order/changeapprovermethod, which uses a
+      // different schema.)
+      FileAuthDVIndicator: dcv_method === 'http',
+      HTTPSFileAuthDVIndicator: dcv_method === 'https',
+      CNAMEAuthDVIndicator: dcv_method === 'cname',
       OrganizationInfo: {
         OrganizationName: (admin && admin.organization) || '',
         OrganizationAddress: {
@@ -176,7 +180,23 @@ export default async function handler(req, res) {
       },
       AdminContact: contact(admin, approver_email),
       TechnicalContact: contact(tech || admin, approver_email),
-    });
+  };
+
+  try {
+    // Dry run first. This API accepts bad values silently far too often, so a
+    // rejection here is a readable error rather than a silently wrong order
+    // placed against a real certificate.
+    try {
+      const v = await tss.validateOrder(creds, orderPayload);
+      const vm = v?.AuthResponse?.Message;
+      if (v?.AuthResponse?.isError) {
+        return json(res, 400, { error: (vm && vm[0]) || 'TheSSLStore rejected these order details' });
+      }
+    } catch (e) {
+      return json(res, 400, { error: e.message });
+    }
+
+    const out = await tss.completeInvite(creds, token, orderPayload);
 
     // Re-read so the row reflects what TheSSLStore now believes, not what we hoped.
     let fresh = null;
