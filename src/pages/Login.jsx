@@ -1,38 +1,25 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { setPlatform } from '../lib/platform.js';
 
 /**
  * Certwatch landing + sign-in.
  *
- * Left panel pitches the product; right panel signs people in by role. Master
- * Admin signs in directly; Partner Admin and End User first pick a platform.
- *
- * The platform pick drives one of two models, switchable here purely so the
- * behaviour can be compared before one is chosen:
- *   A one login. The pick sets which dashboard you land on; a person who
- *     resells through both stores sees both under a single account.
- *   B separate accounts. The pick scopes the login to that platform.
- * The real auth call is identical either way (same signInWithPassword); the
- * difference is only what we remember about the chosen platform afterwards.
+ * Left panel pitches the product; right panel signs people in by role. Every
+ * account is a TheSSLStore account — whether it runs against the live or the
+ * sandbox API is decided by the credentials the partner saves after signing
+ * in, not here.
  */
 
 const ROLES = [
-  { id: 'admin', label: 'Master Admin', blurb: 'Manage partners across both platforms', platforms: false,
+  { id: 'admin', label: 'Master Admin', blurb: 'Manage every partner account',
     icon: <svg viewBox="0 0 24 24"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6l-8-4z"/><path d="M9 12l2 2 4-4"/></svg> },
-  { id: 'partner', label: 'Partner Admin', blurb: 'Your orders, sub-users and assignments', platforms: true,
+  { id: 'partner', label: 'Partner Admin', blurb: 'Your orders, sub-users and assignments',
     icon: <svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-6h6v6"/></svg> },
-  { id: 'user', label: 'End User', blurb: 'Only the certificates assigned to you', platforms: true,
+  { id: 'user', label: 'End User', blurb: 'Only the certificates assigned to you',
     icon: <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg> },
 ];
 
-const PLATS = [
-  { id: 'gogetssl', name: 'GoGetSSL', sub: 'V1 + V2 reseller account', dot: 'gg' },
-  { id: 'thesslstore', name: 'TheSSLStore', sub: 'Live or sandbox account', dot: 'tss' },
-];
-
 export default function Login() {
-  const [role, setRole] = useState(null);
   const [chosen, setChosen] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,9 +27,8 @@ export default function Login() {
   const [err, setErr] = useState('');
   const [sent, setSent] = useState(false);
 
-  function pick(roleId, platformId) {
-    if (platformId) setPlatform(platformId);
-    setChosen({ role: roleId, platform: platformId || null });
+  function pick(roleId) {
+    setChosen({ role: roleId });
     setErr('');
   }
 
@@ -65,7 +51,6 @@ export default function Login() {
   }
 
   const chosenRole = chosen && ROLES.find(r => r.id === chosen.role);
-  const chosenPlat = chosen?.platform && PLATS.find(p => p.id === chosen.platform);
 
   return (
     <div className="land">
@@ -76,9 +61,9 @@ export default function Login() {
         </div>
 
         <div className="land-pitch">
-          <span className="land-eyebrow">GoGetSSL · TheSSLStore — one console</span>
+          <span className="land-eyebrow">TheSSLStore — live &amp; sandbox</span>
           <h1>Every certificate,<br /><span className="thin">from issue to expiry,</span><br />in one console.</h1>
-          <p className="land-lead">One place to watch every reseller order across both platforms — active, pending, cancelled — with each certificate's lifecycle in plain view.</p>
+          <p className="land-lead">Your entire TheSSLStore order book in one call — active, pending, cancelled — with each certificate's lifecycle in plain view.</p>
 
           <div className="land-proof">
             <div className="lp-head"><span className="lp-domain">freecerts.site</span><span className="lp-tag">RAPIDSSL · ACTIVE</span></div>
@@ -106,36 +91,25 @@ export default function Login() {
           <>
             <div className="land-rhead"><h2>Sign in</h2><p>Choose your role to continue.</p></div>
             {ROLES.map(r => (
-              <div key={r.id} className={`land-role${role === r.id ? ' open' : ''}`}>
-                <div className="lr-main" onClick={() => (r.platforms ? setRole(role === r.id ? null : r.id) : pick(r.id))}>
+              <div key={r.id} className="land-role">
+                <div className="lr-main" onClick={() => pick(r.id)}>
                   <div className="lr-ic">{r.icon}</div>
                   <div className="lr-tx"><b>{r.label}</b><span>{r.blurb}</span></div>
                   <span className="lr-arrow"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg></span>
                 </div>
-                {r.platforms && (
-                  <div className="lr-pop"><div className="lr-pop-in">
-                    {PLATS.map(p => (
-                      <div key={p.id} className="lr-plat" onClick={() => pick(r.id, p.id)}>
-                        <span className={`pd ${p.dot}`} />
-                        <span><b>{p.name} {r.id === 'partner' ? 'partner' : 'end user'}</b><small>{p.sub}</small></span>
-                        <span className="go"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>
-                      </div>
-                    ))}
-                  </div></div>
-                )}
               </div>
             ))}
             <div className="land-rfoot">Accounts are created by your provider. Need access? <a href="mailto:admin@certwatch.app">Ask to be invited →</a></div>
           </>
         ) : (
           <>
-            <button className="land-back" onClick={() => { setChosen(null); setRole(null); }}>← Back to roles</button>
+            <button className="land-back" onClick={() => setChosen(null)}>← Back to roles</button>
             <div className="land-rhead">
               <h2>{chosenRole.label}</h2>
               <p>
-                {chosenPlat
-                  ? <>Sign in to your <b>{chosenPlat.name}</b> account. This login is scoped to {chosenPlat.name} only.</>
-                  : 'Sign in to manage partners across both platforms.'}
+                {chosen.role === 'admin'
+                  ? 'Sign in to manage partner accounts.'
+                  : 'Sign in to your Certwatch account.'}
               </p>
             </div>
 

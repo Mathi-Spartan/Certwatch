@@ -26,7 +26,7 @@ export default function Partners() {
       <div className="gp-head">
         <div>
           <h1>Partners</h1>
-          <p>Each partner connects their own GoGetSSL and/or TheSSLStore account. You create the login — they hold the credentials.</p>
+          <p>Each partner connects their own TheSSLStore account, live or sandbox. You create the login — they hold the credentials.</p>
         </div>
         <div className="gp-head-actions"><button className="btn btn-primary" onClick={() => setModal(true)}>Add partner</button></div>
       </div>
@@ -49,7 +49,7 @@ export default function Partners() {
           </div></div>
         ) : (
           <div className="panel"><table className="tbl">
-            <thead><tr><th>Partner</th><th>Platform</th><th>Contact email</th><th>Connection</th><th>Orders</th><th>Sub-users</th><th>Last sync</th></tr></thead>
+            <thead><tr><th>Partner</th><th>Environment</th><th>Contact email</th><th>Connection</th><th>Orders</th><th>Sub-users</th><th>Last sync</th></tr></thead>
             <tbody>
               {list.map(p => {
                 const c = p.connection;
@@ -60,8 +60,8 @@ export default function Partners() {
                       <span className="av">{initials(p.company_name || p.full_name)}</span>
                       <span><b>{p.company_name || p.full_name}</b><span>{p.full_name}</span></span>
                     </div></td>
-                    <td>{p.platform
-                      ? <span className={`ptag ${p.platform === 'thesslstore' ? 'tss' : 'gg'}`}>{p.platform === 'thesslstore' ? 'TheSSLStore' : 'GoGetSSL'}</span>
+                    <td>{c?.tss_environment
+                      ? <span className={`env-tag ${c.tss_environment === 'sandbox' ? 'sandbox' : 'live'}`}>{c.tss_environment === 'sandbox' ? 'Sandbox' : 'Live'}</span>
                       : <span className="mut">—</span>}</td>
                     <td className="mono" style={{ color: 'var(--muted)' }}>{p.email}</td>
                     <td><span className={`pill ${pill[0]}`}>{pill[1]}</span></td>
@@ -100,33 +100,20 @@ function AddPartner({ onClose, onDone }) {
   const [company_name, setCompany] = useState('');
   const [full_name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [platform, setPlatform] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   return (
-    <Modal title="Add partner" sub="They set their own password, then connect their own reseller account." onClose={onClose}
+    <Modal title="Add partner" sub="They set their own password, then connect their own TheSSLStore account." onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" disabled={busy || !full_name || !email || !platform} onClick={async () => {
+        <button className="btn btn-primary" disabled={busy || !full_name || !email} onClick={async () => {
           setBusy(true); setErr('');
-          try { const r = await api('partners', { method: 'POST', body: { company_name, full_name, email, platform } }); onDone(r.invite_link); }
+          try { const r = await api('partners', { method: 'POST', body: { company_name, full_name, email } }); onDone(r.invite_link); }
           catch (e) { setErr(e.message); }
           setBusy(false);
         }}>{busy ? <><span className="spin" /> Creating</> : 'Create partner'}</button>
       </>}>
       {err && <div className="err">{err}</div>}
-      <div className="field" style={{ maxWidth: 'none' }}>
-        <span className="lbl">Platform</span>
-        <div className="plat-choose">
-          <button type="button" className={`pc-opt${platform === 'gogetssl' ? ' on gg' : ''}`} onClick={() => setPlatform('gogetssl')}>
-            <span className="pd gg" /><span><b>GoGetSSL</b><small>V1 + V2 reseller</small></span>
-          </button>
-          <button type="button" className={`pc-opt${platform === 'thesslstore' ? ' on tss' : ''}`} onClick={() => setPlatform('thesslstore')}>
-            <span className="pd tss" /><span><b>TheSSLStore</b><small>DigiCert-family</small></span>
-          </button>
-        </div>
-        <div className="hint">This partner's account is permanently bound to the platform you choose.</div>
-      </div>
       <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Company</span>
         <input value={company_name} onChange={e => setCompany(e.target.value)} /></div>
       <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Contact name</span>
@@ -134,8 +121,9 @@ function AddPartner({ onClose, onDone }) {
       <div className="field" style={{ maxWidth: 'none' }}><span className="lbl">Email</span>
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
       <div className="callout warn">
-        You are not asked for their API credentials — they enter those themselves after signing in.
-        Their API password is never visible to you.
+        You are not asked for their API credentials — the partner enters their own TheSSLStore Partner
+        Code and Auth Token after signing in, and chooses Live or Sandbox at that point. Their token is
+        never visible to you.
       </div>
     </Modal>
   );

@@ -1,14 +1,16 @@
+import { decrypt } from './crypto.js';
+
 /**
- * TheSSLStore REST API client (a DigiCert-family API — unrelated to GoGetSSL).
+ * TheSSLStore REST API client — the only reseller API Certwatch speaks to.
  *
  * Auth is a PartnerCode + AuthToken pair sent in the body of every POST, under
  * an AuthRequest object. There is no session handshake. Two environments:
  *   live    -> https://api.thesslstore.com/rest
  *   sandbox -> https://sandbox-wbapi.thesslstore.com/rest
  *
- * The decisive difference from GoGetSSL: /order/query returns the partner's
- * WHOLE order book in one call, every status included — cancelled orders too.
- * So there is no listing gap here and no CSV workaround: sync is complete.
+ * /order/query returns the partner's WHOLE order book in one call, every
+ * status included — cancelled orders too. There is no listing gap, so sync is
+ * always complete and nothing ever has to be imported by hand.
  *
  * Verified against the live sandbox on 2026-08-24:
  *   /order/query  with no filter -> full list (46 orders, 28 of them cancelled)
@@ -97,6 +99,10 @@ export const tss = {
       RefundReason: reason || 'Revoked from Certwatch',
     }),
 
+  /** Certificate material for an issued order. */
+  download: (creds, orderId) =>
+    call(creds, '/order/download', { TheSSLStoreOrderID: String(orderId) }),
+
   downloadZip: (creds, orderId) =>
     call(creds, '/order/downloadaszip', { TheSSLStoreOrderID: String(orderId), ReturnPKCS7Cert: false }),
 };
@@ -154,3 +160,33 @@ export function normaliseTss(o) {
 }
 
 export { TSSError };
+
+
+/**
+ * Load and decrypt a partner's TheSSLStore credentials.
+ *
+ * The environment (live or sandbox) is whatever the partner chose when they
+ * saved the credentials — it travels with the credential row, so every call
+ * made on their behalf automatically hits the right base URL.
+ */
+export async function tssCredsFor(db, partnerId) {
+  const { data: cred } = await db
+    .from('partner_credentials')
+    .select('*')
+    .eq('partner_id', partnerId)
+    .eq('platform', 'thesslstore')
+    .maybeSingle();
+
+  if (!cred) {
+    const e = new Error('This partner has not connected a TheSSLStore account yet');
+    e.code = 409;
+    throw e;
+  }
+
+  return {
+    partnerCode: cred.tss_partner_code,
+    authToken: decrypt(cred.tss_auth_token_enc),
+    environment: cred.tss_environment === 'sandbox' ? 'sandbox' : 'live',
+    cred,
+  };
+}

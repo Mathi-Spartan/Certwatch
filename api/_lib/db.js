@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
-import { decrypt } from './crypto.js';
-import { authenticate } from './gg.js';
+
+/** Certwatch speaks to exactly one reseller platform. */
+export const PLATFORM = 'thesslstore';
 
 export function admin() {
   return createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
@@ -47,64 +48,11 @@ export function requireRole(profile, ...roles) {
 }
 
 /**
- * The partner whose GoGetSSL account backs this caller.
+ * The partner whose TheSSLStore account backs this caller.
  * Partners are their own partner; sub-users inherit their parent's.
  */
 export function partnerIdOf(profile) {
   return profile.role === 'partner' ? profile.id : profile.parent_partner_id;
-}
-
-/**
- * The platform a request is allowed to act on.
- *
- * Model B: a partner or sub-user is bound to one platform by their account, and
- * that binding is authoritative — a query param cannot widen it. Only the
- * master admin, who has no binding, may target a platform via ?platform=.
- * Returns null if an admin didn't specify one (meaning "no platform scope").
- */
-export function platformFor(profile, requested) {
-  if (profile.role === 'admin') {
-    return requested === 'thesslstore' ? 'thesslstore' : requested === 'gogetssl' ? 'gogetssl' : null;
-  }
-  return profile.platform || null; // the account's own binding, ignoring any param
-}
-
-/**
- * Decrypt a partner's credentials and exchange them for a live GoGetSSL
- * session key. The plaintext password exists only inside this function call.
- */
-export async function ggKeyFor(db, partnerId) {
-  const { data: cred } = await db
-    .from('partner_credentials')
-    .select('*')
-    .eq('partner_id', partnerId)
-    .single();
-
-  if (!cred) {
-    const e = new Error('This partner has not connected a GoGetSSL account yet');
-    e.code = 409;
-    throw e;
-  }
-
-  // Reuse a cached session key while it is still fresh (GoGetSSL keys last ~3h).
-  if (cred.auth_key && cred.auth_key_expires_at && new Date(cred.auth_key_expires_at) > new Date()) {
-    return { key: cred.auth_key, cred };
-  }
-
-  const password = decrypt(cred.api_password_enc);
-  const key = await authenticate(cred.gg_login, password);
-
-  await db
-    .from('partner_credentials')
-    .update({
-      auth_key: key,
-      auth_key_expires_at: new Date(Date.now() + 150 * 60 * 1000).toISOString(),
-      last_verified_at: new Date().toISOString(),
-      status: 'ok',
-    })
-    .eq('partner_id', partnerId);
-
-  return { key, cred };
 }
 
 /** Every call made with a partner's credentials leaves a trace. */

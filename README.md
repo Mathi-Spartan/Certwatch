@@ -1,43 +1,62 @@
 # Certwatch
 
-Certificate management for GoGetSSL partners.
+Certificate management for TheSSLStore partners.
 
-Partners connect **their own** GoGetSSL account. Certwatch reads their order
-book, and lets them and their sub-users manage certificates — reissue,
-download, and run domain validation.
+Partners connect **their own** TheSSLStore account — live or sandbox — and
+Certwatch reads their order book and lets them and their sub-users manage
+certificates: reissue, download, and run domain validation.
 
 ## Roles
 
 | Role | Can do |
 |---|---|
 | Admin | Create partner accounts, see connection health and the full activity log. Cannot see or act on partner certificates. |
-| Partner | Connect a GoGetSSL account, see the whole order book, create sub-users, assign certificates, manage any certificate. |
-| Sub-user | Manage the certificates assigned to them: reissue, download, check and drive domain validation, cancel. |
+| Partner | Connect a TheSSLStore account, see the whole order book, create sub-users, assign certificates, manage any certificate. |
+| Sub-user | Manage the certificates assigned to them: reissue, download, check and drive domain validation, revoke. |
+
+## Live and sandbox
+
+TheSSLStore issues a separate Partner Code and Auth Token for each of its two
+environments. The partner chooses which environment their credentials belong to
+in the same box where they save them, and that choice is stored on the
+credential row — so every later call automatically goes to the matching base
+URL. A sandbox token will not verify against live, and vice versa; the save is
+rejected with a message saying so rather than being stored broken.
+
+| Environment | Base URL |
+|---|---|
+| Live | `https://api.thesslstore.com/rest` |
+| Sandbox | `https://sandbox-wbapi.thesslstore.com/rest` |
+
+Switching environments means saving credentials again. Orders already synced
+from the previous environment stay in the list until the next sync replaces
+them.
 
 ## What this cannot do, by design
 
-There is no `addSSLOrder`, `addSSLRenewOrder` or `addSSLSANOrder` anywhere in
-this codebase. **Certwatch cannot place an order or a renewal, so it cannot
-spend a partner's GoGetSSL balance** — not through a bug, not through a
-compromise. Renewals stay in the partner's own GoGetSSL account.
+There is no order-placement or renewal call anywhere in this codebase.
+**Certwatch cannot place an order or a renewal, so it cannot spend a partner's
+balance** — not through a bug, not through a compromise. Renewals stay in the
+partner's own TheSSLStore account.
 
 ## Credential handling
 
-A partner's GoGetSSL API password is encrypted with AES-256-GCM before it is
+A partner's TheSSLStore Auth Token is encrypted with AES-256-GCM before it is
 stored. The key is `CRED_ENC_KEY`, held only in the Vercel environment, so a
 database dump on its own reveals nothing. The ciphertext is never sent to the
 browser: `partner_credentials` has **no RLS select policy at all**, and the
-password is decrypted only inside a serverless function, in memory, for the
+token is decrypted only inside a serverless function, in memory, for the
 duration of one API call. Every call made with a partner's credentials is
 written to `audit_log`.
 
-Private keys are never handled server-side. When a user asks Certwatch to
-generate a CSR, the keypair is built in their browser with node-forge and
-packaged into a ZIP locally. Only the CSR — public by design — is sent onward.
+Private keys never reach the server. When someone asks Certwatch to generate a
+CSR, the keypair is built in their browser with node-forge and packaged into a
+ZIP locally. Only the CSR — public by design — is sent onward.
 
 ## Setup
 
-1. Run `db/schema.sql` in the Supabase SQL editor.
+1. Run `db/schema.sql`, then migrations `002` through `007`, in the Supabase
+   SQL editor.
 2. Set the environment variables below in Vercel.
 3. Create the first admin by inserting a profile row with `role = 'admin'`.
 
@@ -54,21 +73,34 @@ packaged into a ZIP locally. Only the CSR — public by design — is sent onwar
 `GET /api/health` reports which of these are present and whether the
 encryption key is well formed. It never echoes a value.
 
-## GoGetSSL V1 endpoints
+## TheSSLStore endpoints in use
 
-Verified against the live API by probing with an invalid auth key: a `403
-"Auth key is not valid"` proves the path exists, a `404 "The requested method
-was not found"` proves it does not. POST-only routes answer 404 to a GET, so
-each was probed with its real verb.
+Auth is a `PartnerCode` + `AuthToken` pair in an `AuthRequest` object in the
+body of every POST — there is no session handshake. Errors surface inside
+`AuthResponse.isError`, not in the HTTP status.
 
-| Action | Verb | Path |
-|---|---|---|
-| Authenticate | POST | `/auth/` (fields `user`, `pass`) |
-| List orders | GET | `/orders/` |
-| Order status | GET | `/orders/status/{id}/` |
-| Reissue | POST | `/orders/ssl/reissue/{id}/` |
-| Change DCV method | POST | `/orders/ssl/change_validation_method/{id}/` |
-| Change approver | POST | `/orders/ssl/change_validation_email/{id}/` |
-| Resend approver | POST | `/orders/ssl/resend_validation_email/{id}/` |
-| Revalidate | POST | `/orders/ssl/revalidate/{id}/` |
-| Cancel | POST | `/orders/cancel_ssl_order/` (order id in the **body**) |
+| Action | Path |
+|---|---|
+| List the whole order book | `/order/query` |
+| Order status | `/order/status` |
+| Reissue | `/order/reissue` |
+| Download certificate | `/order/download` |
+| Resend approver email | `/order/resend` |
+| Change approver | `/order/changeapprovermethod` |
+| Revoke | `/order/revokerequest` |
+
+`/order/query` returns every order in one call, cancelled ones included, so a
+sync is always complete — there is no listing gap and nothing ever needs
+importing by hand.
+
+Credentials are validated against `/order/status`, not `/order/query`: verified
+in sandbox, `/order/query` does not reject a bad token but `/order/status`
+does, returning `-9008 Token/Authentication Failure`.
+
+## History
+
+GoGetSSL support was removed from this project in August 2026. Existing
+GoGetSSL rows were deliberately left in the database rather than dropped — see
+`db/007_tss_only.sql`. Migrations `003` through `006` are kept as an applied
+ledger; they describe schema that has already been run against production and
+should not be edited or deleted.

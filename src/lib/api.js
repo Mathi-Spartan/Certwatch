@@ -1,13 +1,9 @@
 import { supabase } from './supabase.js';
-import { getPlatform } from './platform.js';
 
 /** Every call carries the caller's Supabase session so the server can scope it. */
-export async function api(path, { method = 'GET', body, platform } = {}) {
+export async function api(path, { method = 'GET', body } = {}) {
   const { data: { session } } = await supabase.auth.getSession();
-  const plat = platform || getPlatform();
-  const sep = path.includes('?') ? '&' : '?';
-  const url = plat ? `/api/${path}${sep}platform=${plat}` : `/api/${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(`/api/${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',

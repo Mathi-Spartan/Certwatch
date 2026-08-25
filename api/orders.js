@@ -1,10 +1,9 @@
-import { json, requireUser, ggKeyFor, platformFor, audit } from './_lib/db.js';
-import { gg } from './_lib/gg.js';
+import { json, requireUser, audit, PLATFORM } from './_lib/db.js';
+import { tss, tssCredsFor, normaliseTss } from './_lib/tss.js';
 
 /** Rows the caller is allowed to see. */
-function scope(db, profile, platform) {
-  let q = db.from('orders').select('*');
-  if (platform) q = q.eq('platform', platform);
+function scope(db, profile) {
+  const q = db.from('orders').select('*').eq('platform', PLATFORM);
   if (profile.role === 'admin') return q;
   if (profile.role === 'partner') return q.eq('partner_id', profile.id);
   return q.eq('partner_id', profile.parent_partner_id).eq('assigned_to', profile.id);
@@ -16,37 +15,19 @@ export default async function handler(req, res) {
   const { profile, db } = ctx;
 
   const id = req.query?.id;
-  const platform = platformFor(profile, req.query?.platform);
 
-  // Detail view — always re-read from the CA so nothing on screen is stale.
+  // Detail view — re-read from the CA so nothing on screen is stale.
   if (id) {
-    const { data: row } = await scope(db, profile, platform).eq('gg_order_id', String(id)).maybeSingle();
+    const { data: row } = await scope(db, profile).eq('gg_order_id', String(id)).maybeSingle();
     if (!row) return json(res, 404, { error: 'That certificate is not yours to view' });
 
-    if (row.platform === 'thesslstore') {
-      // A tss detail view is served from the stored row; sync keeps it fresh.
-      return json(res, 200, { ...row, live: false });
-    }
     try {
-      const { key } = await ggKeyFor(db, row.partner_id);
-      const fresh = await gg.orderStatus(key, row.gg_order_id);
-      // Lazy enrichment: the listing gave us only id + status, so the first time
-      // an order is opened we backfill domain and dates from the detail call and
-      // mark it enriched. Blank sentinel dates (0000-00-00) map to null.
-      const clean = (d) => (d && d !== '0000-00-00' ? d : null);
-      const patch = {
-        raw: fresh,
-        gg_status: (fresh.status || '').toLowerCase() || row.gg_status,
-        common_name: fresh.domain || fresh.common_name || row.common_name || null,
-        product_name: row.product_name || (fresh.product_id ? `Product ${fresh.product_id}` : null),
-        valid_from: clean(fresh.valid_from) || row.valid_from,
-        valid_till: clean(fresh.valid_till) || row.valid_till,
-        expires_at: clean(fresh.end_date) || row.expires_at,
-        enriched: true,
-        last_synced_at: new Date().toISOString(),
-      };
+      const creds = await tssCredsFor(db, row.partner_id);
+      const o = await tss.orderStatus(creds, row.gg_order_id);
+      const fresh = normaliseTss({ ...o, TheSSLStoreOrderID: row.gg_order_id });
+      const patch = { ...fresh, last_synced_at: new Date().toISOString(), last_status_at: new Date().toISOString() };
       await db.from('orders').update(patch)
-        .eq('partner_id', row.partner_id).eq('gg_order_id', row.gg_order_id);
+        .eq('partner_id', row.partner_id).eq('platform', PLATFORM).eq('gg_order_id', row.gg_order_id);
       await audit(db, { actor: profile, partnerId: row.partner_id, action: 'order.view', orderId: row.gg_order_id });
       return json(res, 200, { ...row, ...patch, live: true });
     } catch (e) {
@@ -55,7 +36,7 @@ export default async function handler(req, res) {
     }
   }
 
-  const { data, error } = await scope(db, profile, platform).order('valid_till', { ascending: true, nullsFirst: false });
+  const { data, error } = await scope(db, profile).order('valid_till', { ascending: true, nullsFirst: false });
   if (error) return json(res, 500, { error: error.message });
 
   let subs = [];
@@ -63,12 +44,12 @@ export default async function handler(req, res) {
   if (profile.role === 'partner') {
     const { data: s } = await db.from('profiles').select('id,full_name,email').eq('parent_partner_id', profile.id);
     subs = s || [];
-    const { data: creds } = await db.from('partner_credentials')
-      .select('platform,status,last_sync_at,orders_synced').eq('partner_id', profile.id);
-    const forPlatform = (creds || []).find(c => c.platform === (platform || 'gogetssl'));
-    connection = forPlatform
-      ? { connected: true, status: forPlatform.status, last_sync_at: forPlatform.last_sync_at, orders_synced: forPlatform.orders_synced }
+    const { data: cred } = await db.from('partner_credentials')
+      .select('status,last_sync_at,orders_synced,tss_environment')
+      .eq('partner_id', profile.id).eq('platform', PLATFORM).maybeSingle();
+    connection = cred
+      ? { connected: true, status: cred.status, last_sync_at: cred.last_sync_at, orders_synced: cred.orders_synced, environment: cred.tss_environment || 'live' }
       : { connected: false };
   }
-  return json(res, 200, { orders: data || [], subusers: subs, connection, platform: platform || 'gogetssl' });
+  return json(res, 200, { orders: data || [], subusers: subs, connection });
 }

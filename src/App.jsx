@@ -9,7 +9,6 @@ import Connection from './pages/Connection.jsx';
 import SubUsers from './pages/SubUsers.jsx';
 import Partners from './pages/Partners.jsx';
 import Activity from './pages/Activity.jsx';
-import { setPlatform } from './lib/platform.js';
 
 const HOME = { admin: '/partners', partner: '/certificates', sub_user: '/certificates' };
 
@@ -32,12 +31,7 @@ function Shell() {
       const { data, error } = await supabase.from('profiles').select('*').eq('id', session.user.id).single();
       if (gone) return;
       if (error || !data) setProfileError('Your account has no profile yet. Ask your provider to finish setting it up.');
-      else {
-        setProfile(data);
-        // Model B: a partner/sub-user account is bound to one platform. That
-        // binding — not a picker or switcher — decides everything downstream.
-        if (data.platform) setPlatform(data.platform);
-      }
+      else setProfile(data);
     })();
     return () => { gone = true; };
   }, [session]);
@@ -57,23 +51,10 @@ function Shell() {
   }
   if (!profile) return <div className="loading" style={{ paddingTop: 90 }}><span className="spin" /> Loading your account…</div>;
 
-  // Platform is the account's own binding. Admin is platform-agnostic (null).
-  const platform = profile.role === 'admin' ? null : profile.platform;
-
-  // A partner/sub-user with no platform binding is a provisioning error.
-  if (profile.role !== 'admin' && !platform) {
-    return <div className="auth-wrap"><div className="auth-card">
-      <h1>Account not set up</h1>
-      <p className="sub">This account isn't linked to a platform yet. Ask your administrator to set it.</p>
-      <button className="btn" style={{ width: '100%', justifyContent: 'center' }}
-        onClick={() => supabase.auth.signOut()}>Sign out</button>
-    </div></div>;
-  }
-
   const home = HOME[profile.role] || '/certificates';
 
   return (
-    <DashShell profile={profile} platform={platform}>
+    <DashShell profile={profile}>
       <Routes>
         <Route path="/" element={<Navigate to={home} replace />} />
         <Route path="/login" element={<Navigate to={home} replace />} />

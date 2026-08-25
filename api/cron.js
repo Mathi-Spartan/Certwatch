@@ -1,4 +1,4 @@
-import { admin, json, audit } from './_lib/db.js';
+import { admin, json, audit, PLATFORM } from './_lib/db.js';
 import { syncPartner } from './sync.js';
 
 /**
@@ -11,7 +11,8 @@ export default async function handler(req, res) {
   if (!secret || given !== secret) return json(res, 401, { error: 'Not authorised' });
 
   const db = admin();
-  const { data: creds } = await db.from('partner_credentials').select('partner_id');
+  const { data: creds } = await db.from('partner_credentials')
+    .select('partner_id').eq('platform', PLATFORM);
   const results = [];
 
   for (const c of creds || []) {
@@ -19,7 +20,8 @@ export default async function handler(req, res) {
       const n = await syncPartner(db, c.partner_id, { id: null, full_name: 'scheduled sync' });
       results.push({ partner_id: c.partner_id, orders: n });
     } catch (e) {
-      await db.from('partner_credentials').update({ status: 'error' }).eq('partner_id', c.partner_id);
+      await db.from('partner_credentials').update({ status: 'error' })
+        .eq('partner_id', c.partner_id).eq('platform', PLATFORM);
       await audit(db, { partnerId: c.partner_id, action: 'orders.sync', result: 'failed', detail: e.message });
       results.push({ partner_id: c.partner_id, error: e.message });
     }

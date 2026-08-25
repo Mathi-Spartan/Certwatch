@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 /**
- * Partner GoGetSSL API passwords are encrypted with AES-256-GCM before they
+ * Partner TheSSLStore auth tokens are encrypted with AES-256-GCM before they
  * touch the database. The key lives only in the CRED_ENC_KEY env var, so a
  * database dump on its own is useless — an attacker needs the Vercel env too.
  *

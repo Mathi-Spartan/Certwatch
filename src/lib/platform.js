@@ -1,14 +1,15 @@
-/** The two reseller platforms Certwatch spans. */
-export const PLATFORMS = {
-  gogetssl:    { id: 'gogetssl',    name: 'GoGetSSL',     tag: 'V1 + V2 reseller API', accent: '#3375b1' },
-  thesslstore: { id: 'thesslstore', name: 'TheSSLStore',  tag: 'DigiCert-family REST API', accent: '#1f7a3d' },
-};
+/**
+ * Certwatch speaks to one reseller platform: TheSSLStore, on either its live
+ * or sandbox API. Which of the two a partner uses is decided by the partner
+ * when they save their credentials and is stored with those credentials, so
+ * nothing in the UI has to carry a platform around.
+ */
+export const PLATFORM = 'thesslstore';
+export const PLATFORM_NAME = 'TheSSLStore';
 
-const KEY = 'cw_platform';
-export function getPlatform() {
-  const v = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(KEY) : null;
-  return v === 'thesslstore' ? 'thesslstore' : v === 'gogetssl' ? 'gogetssl' : null;
-}
-export function setPlatform(p) {
-  try { sessionStorage.setItem(KEY, p); } catch {}
-}
+export const ENVIRONMENTS = [
+  { id: 'live',    label: 'Live (Production)', hint: 'Real orders against your production TheSSLStore account.' },
+  { id: 'sandbox', label: 'Sandbox (Testing)', hint: 'Test orders only. Sandbox credentials are separate from live ones.' },
+];
+
+export const envLabel = (id) => (ENVIRONMENTS.find(e => e.id === id) || ENVIRONMENTS[0]).label;

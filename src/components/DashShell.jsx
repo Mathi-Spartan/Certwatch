@@ -1,6 +1,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
-import { PLATFORMS, setPlatform } from '../lib/platform.js';
+import { PLATFORM_NAME } from '../lib/platform.js';
 
 const NAV = {
   admin:    [['/partners', 'Partners'], ['/activity', 'Activity log']],
@@ -8,7 +8,7 @@ const NAV = {
   sub_user: [['/certificates', 'My certificates']],
 };
 
-export default function DashShell({ profile, children, platform }) {
+export default function DashShell({ profile, children }) {
   const nav = useNavigate();
   const items = NAV[profile.role] || [];
 
@@ -17,16 +17,16 @@ export default function DashShell({ profile, children, platform }) {
 
   return (
     <div className="gp-shell">
-      <aside className="gp-side" data-platform={platform || 'admin'}>
+      <aside className="gp-side">
         <div className="gp-brand">
           <div className="gp-brand-mark">
             <svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V5l-9-4zm0 6a3 3 0 0 1 3 3v1h1v6H8v-6h1v-1a3 3 0 0 1 3-3zm0 2a1 1 0 0 0-1 1v1h2v-1a1 1 0 0 0-1-1z"/></svg>
           </div>
           <div className="gp-brand-name">Certwatch</div>
         </div>
-        {platform && (
-          <div className={`plat-badge-side${platform === 'thesslstore' ? ' tss' : ''}`}>
-            <span className="pd" />{PLATFORMS[platform].name} partner
+        {profile.role !== 'admin' && (
+          <div className="plat-badge-side">
+            <span className="pd" />{PLATFORM_NAME} {profile.role === 'partner' ? 'partner' : 'end user'}
           </div>
         )}
         <nav className="gp-nav">
