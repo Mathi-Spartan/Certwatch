@@ -116,10 +116,16 @@ export const tss = {
       DomainNames: domainNames || '',
     }),
 
+  /**
+   * ApproverMethod is an uppercase enum: EMAIL, FILE, CNAME. 'Email' is not
+   * accepted — and the API takes an unrecognised value without complaining
+   * rather than rejecting it, so a wrong case fails silently and the method
+   * never changes. Same trap as /order/neworder.
+   */
   changeApprover: (creds, orderId, { approverMethod, approverEmail, domainNames }) =>
     call(creds, '/order/changeapprovermethod', {
       TheSSLStoreOrderID: String(orderId),
-      ApproverMethod: approverMethod || 'Email',
+      ApproverMethod: String(approverMethod || 'EMAIL').toUpperCase(),
       ApproverEmail: approverEmail || '',
       DomainNames: domainNames || '',
     }),

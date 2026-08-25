@@ -36,7 +36,11 @@ export default function OrderDetail({ order, profile, subusers, onChanged }) {
   const dead = ['cancelled', 'expired', 'rejected'].includes(live.gg_status);
   // An order bought in the TheSSLStore dashboard but never configured. It
   // carries its own enrolment token, which is what lets us complete it.
+  // Only an order that was never configured can be generated. Once submitted
+  // it is Pending with the CA and offering Generate again is misleading — the
+  // token is spent and the call would fail.
   const incomplete = live.gg_status === 'processing'
+    && (raw.OrderStatus?.MajorStatus || '').toLowerCase() === 'initial'
     && !!(raw.Token || (raw.TokenID && raw.TokenCode));
   // Generation belongs to whoever owns the certificate. Once an order has been
   // assigned, that is the end user — the partner hands it over and steps back,

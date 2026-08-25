@@ -23,7 +23,8 @@ import OrderDetail from '../components/OrderDetail.jsx';
 const CHIPS = [
   { id: 'all', label: 'All orders' },
   { id: 'active', label: 'Complete' },
-  { id: 'processing', label: 'Incomplete' },
+  { id: 'initial', label: 'Incomplete' },
+  { id: 'pending', label: 'Pending' },
   { id: 'expiring', label: 'Expiring' },
   { id: 'expired', label: 'Expired' },
   { id: 'cancelled', label: 'Cancelled' },
@@ -39,7 +40,17 @@ const fmtDate = (d) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', mont
 
 function statusOf(o, certEnd) {
   const minor = (o.raw?.OrderStatus?.MinorStatus || '').toLowerCase();
+  const major = (o.raw?.OrderStatus?.MajorStatus || '').toLowerCase();
   if (minor === 'revoked') return { key: 'cancelled', cls: 'can', label: 'Revoked' };
+
+  // 'Initial' and 'Pending' both normalise to gg_status 'processing', but they
+  // are completely different states and labelling both "Incomplete" hid the
+  // fact that a submission had worked. Initial = bought, never configured.
+  // Pending = CSR submitted, waiting on domain validation.
+  if (o.gg_status === 'processing') {
+    if (major === 'initial') return { key: 'initial', cls: 'pend', label: 'Incomplete' };
+    return { key: 'pending', cls: 'proc', label: 'Pending validation' };
+  }
   // TheSSLStore keeps reporting MajorStatus 'Active' after a certificate has
   // expired — their own panel derives expiry at display time from the end date,
   // so we do the same or an expired cert reads as Complete here.
@@ -48,7 +59,6 @@ function statusOf(o, certEnd) {
   }
   switch (o.gg_status) {
     case 'active':     return { key: 'active', cls: 'act', label: 'Complete' };
-    case 'processing': return { key: 'processing', cls: 'pend', label: 'Incomplete' };
     case 'expired':    return { key: 'expired', cls: 'exp', label: 'Expired' };
     case 'cancelled':  return { key: 'cancelled', cls: 'can', label: 'Cancelled' };
     default:           return { key: o.gg_status || 'unknown', cls: 'mute', label: o.gg_status || 'Unknown' };
@@ -68,9 +78,29 @@ function Ago({ at }) {
   return <span>{fmtTime(at)}</span>;
 }
 
+/** Sortable column header. The arrow shows direction only on the active column. */
+function Th({ id, sort, on, right, children }) {
+  const active = sort.col === id;
+  return (
+    <th className={`ob-th${right ? ' r' : ''}${active ? ' on' : ''}`}
+        onClick={() => on(id)}
+        title={`Sort by ${String(children).toLowerCase()}`}>
+      {children}<span className="ob-arrow">{active ? (sort.dir === 'asc' ? '\u2191' : '\u2193') : '\u2195'}</span>
+    </th>
+  );
+}
+
 export default function DashTss({ data, orders, syncing, autoBusy, onSync, q, setQ, profile, onChanged }) {
   const [chip, setChip] = useState('all');
   const [open, setOpen] = useState(null);
+  const [sort, setSort] = useState({ col: 'date', dir: 'desc' });
+
+  function toggleSort(col) {
+    setSort(s => s.col === col
+      ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { col, dir: col === 'status' || col === 'domain' ? 'asc' : 'desc' });
+    setOpen(null);
+  }
 
   const rows = useMemo(() => orders.map(o => {
     const raw = o.raw || {};
@@ -90,7 +120,8 @@ export default function DashTss({ data, orders, syncing, autoBusy, onSync, q, se
   const counts = useMemo(() => ({
     all: rows.length,
     active: rows.filter(r => r.st.key === 'active').length,
-    processing: rows.filter(r => r.st.key === 'processing').length,
+    initial: rows.filter(r => r.st.key === 'initial').length,
+    pending: rows.filter(r => r.st.key === 'pending').length,
     expiring: rows.filter(r => r.expiringSoon).length,
     expired: rows.filter(r => r.st.key === 'expired').length,
     cancelled: rows.filter(r => r.st.key === 'cancelled').length,
@@ -108,9 +139,29 @@ export default function DashTss({ data, orders, syncing, autoBusy, onSync, q, se
       String(r.o.gg_order_id).includes(s) ||
       String(r.vendorId || '').includes(s));
 
-    // Newest purchase first, undated last — the panel's default ordering.
-    return [...list].sort((a, b) => (b.purchased?.getTime() || 0) - (a.purchased?.getTime() || 0));
-  }, [rows, chip, q]);
+    // Status sorts by where the order sits in its life, not alphabetically —
+    // "Cancelled, Complete, Expired, Incomplete" would be a useless ordering.
+    const RANK = { initial: 0, pending: 1, active: 2, expired: 3, cancelled: 4 };
+    const val = (r) => {
+      switch (sort.col) {
+        case 'domain':  return (r.domain || '\uffff').toLowerCase();
+        case 'order':   return Number(r.vendorId || r.o.gg_order_id || 0);
+        case 'product': return (r.o.product_name || '').toLowerCase();
+        case 'price':   return r.amount ?? -1;
+        case 'expires': return r.certEnd?.getTime() ?? -1;
+        case 'status':  return RANK[r.st.key] ?? 9;
+        default:        return r.purchased?.getTime() ?? -1;
+      }
+    };
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const x = val(a), y = val(b);
+      if (x < y) return -1 * dir;
+      if (x > y) return 1 * dir;
+      // Stable tiebreak so equal keys never reshuffle between renders.
+      return Number(b.o.gg_order_id) - Number(a.o.gg_order_id);
+    });
+  }, [rows, chip, q, sort]);
 
   return (
     <div className="tss-dash">
@@ -173,13 +224,13 @@ export default function DashTss({ data, orders, syncing, autoBusy, onSync, q, se
             <table className="ob-tbl">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Domain / Company</th>
-                  <th>Order ID</th>
-                  <th>Product</th>
-                  <th className="r">Price</th>
-                  <th>Expires</th>
-                  <th>Status</th>
+                  <Th id="date"    sort={sort} on={toggleSort}>Date</Th>
+                  <Th id="domain"  sort={sort} on={toggleSort}>Domain / Company</Th>
+                  <Th id="order"   sort={sort} on={toggleSort}>Order ID</Th>
+                  <Th id="product" sort={sort} on={toggleSort}>Product</Th>
+                  <Th id="price"   sort={sort} on={toggleSort} right>Price</Th>
+                  <Th id="expires" sort={sort} on={toggleSort}>Expires</Th>
+                  <Th id="status"  sort={sort} on={toggleSort}>Status</Th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>

@@ -17,7 +17,7 @@ const ACTIONS = {
   download:        (c, id) => tss.download(c, id),
   resend_approver: (c, id) => tss.resend(c, id, { resendType: 'ApproverEmail' }),
   change_approver: (c, id, p) => tss.changeApprover(c, id, {
-    approverMethod: p.new_method || 'Email',
+    approverMethod: ({ email: 'EMAIL', http: 'FILE', https: 'FILE', cname: 'CNAME' })[p.new_method] || 'EMAIL',
     approverEmail: p.new_email,
     domainNames: p.domain,
   }),
