@@ -27,6 +27,43 @@ function tokenOf(raw = {}) {
   return null;
 }
 
+/**
+ * Rebuild a CSR into canonical PEM before it goes to the CA.
+ *
+ * DigiCert answers "Failed to parse CSR. Generate CSR as valid Base-64 data"
+ * for anything it cannot decode cleanly, and there are several ways to get
+ * there: node-forge emits CRLF line endings, a paste from a terminal can carry
+ * leading indentation or soft-wrapped lines, and copying out of a PDF can drop
+ * the trailing newline. Rather than trust either source, we strip the body back
+ * to raw base64, verify it decodes to a DER SEQUENCE, and re-emit it wrapped at
+ * 64 columns with LF endings — the form every CA parser accepts.
+ */
+function canonicalCsr(input) {
+  const text = String(input || '').replace(/\r/g, '');
+  const m = text.match(/-----BEGIN (?:NEW )?CERTIFICATE REQUEST-----([\s\S]*?)-----END (?:NEW )?CERTIFICATE REQUEST-----/);
+  if (!m) throw new Error('That does not look like a CSR. It must include the BEGIN and END CERTIFICATE REQUEST lines.');
+
+  const b64 = m[1].replace(/[^A-Za-z0-9+/=]/g, '');
+  if (!b64) throw new Error('The CSR is empty between its BEGIN and END lines.');
+
+  let der;
+  try { der = Buffer.from(b64, 'base64'); }
+  catch { throw new Error('The CSR body is not valid Base-64.'); }
+
+  // Re-encoding must round-trip, or the body held characters base64 silently
+  // discarded — which is precisely what the CA reports as unparseable.
+  if (der.toString('base64').replace(/=+$/, '') !== b64.replace(/=+$/, '')) {
+    throw new Error('The CSR body is not valid Base-64 — it may have been truncated or line-wrapped by the copy.');
+  }
+  // 0x30 is DER SEQUENCE: every CSR starts with one.
+  if (der.length < 64 || der[0] !== 0x30) {
+    throw new Error('The CSR decodes but is not a certificate request. Check you pasted the CSR and not the private key or certificate.');
+  }
+
+  const lines = b64.match(/.{1,64}/g) || [];
+  return `-----BEGIN CERTIFICATE REQUEST-----\n${lines.join('\n')}\n-----END CERTIFICATE REQUEST-----\n`;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
 
@@ -71,9 +108,9 @@ export default async function handler(req, res) {
   }
 
   const { csr, webserver_type, dcv_method, approver_email, dns_names, admin, tech } = body;
-  if (!csr || !String(csr).includes('CERTIFICATE REQUEST')) {
-    return json(res, 400, { error: 'A valid CSR is required' });
-  }
+  let cleanCsr;
+  try { cleanCsr = canonicalCsr(csr); }
+  catch (e) { return json(res, 400, { error: e.message }); }
 
   // Credentials are still loaded — the environment (live vs sandbox) decides
   // which base URL the token is presented against.
@@ -98,7 +135,7 @@ export default async function handler(req, res) {
   try {
     const out = await tss.completeInvite(creds, token, {
       TheSSLStoreOrderID: String(row.gg_order_id),
-      CSR: csr,
+      CSR: cleanCsr,
       WebServerType: webserver_type || 'Other',
       DNSNames: Array.isArray(dns_names) ? dns_names : [],
       ApproverEmail: approver_email || '',

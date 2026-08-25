@@ -27,8 +27,11 @@ export async function generateCsrBundle({ commonName, bits = 2048 }) {
   csr.setSubject([{ name: 'commonName', value: commonName }]);
   csr.sign(keys.privateKey, forge.md.sha256.create());
 
-  const csrPem = forge.pki.certificationRequestToPem(csr);
-  const keyPem = forge.pki.privateKeyToPem(keys.privateKey);
+  // node-forge emits CRLF. Some CA parsers reject that outright, so normalise
+  // here as well as on the server — the ZIP the user keeps should match exactly
+  // what was submitted.
+  const csrPem = forge.pki.certificationRequestToPem(csr).replace(/\r\n/g, '\n');
+  const keyPem = forge.pki.privateKeyToPem(keys.privateKey).replace(/\r\n/g, '\n');
   const base = commonName.replace(/^\*\./, 'wildcard.').replace(/[^a-z0-9.-]/gi, '_');
 
   async function downloadZip() {
